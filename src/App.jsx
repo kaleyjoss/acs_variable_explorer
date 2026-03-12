@@ -7,7 +7,7 @@ const YEARS = Array.from({length: 16}, (_, i) => 2009 + i);
 // ── Label tree ────────────────────────────────────────────────────────────────
 function splitLabel(label) {
   if (!label) return [];
-  const tokens = label.split(/(\s+(?:by|for)\s+)/i);
+  const tokens = label.split(/(\s+(?:by|for)\s+|\()/i);
   const parts = [];
   let current = tokens[0].trim();
   for (let i = 1; i < tokens.length; i += 2) {

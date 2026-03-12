@@ -248,7 +248,7 @@ export default function App() {
   const [detailPath, setDetailPath] = useState([]);
   const [search, setSearch]         = useState("");
   const [copied, setCopied]         = useState(false);
-  const [showUpload, setShowUpload] = useState(true);
+  const [showUpload, setShowUpload] = useState(false);
   const [rScript, setRScript]       = useState("");
   const [rCopied, setRCopied]       = useState(false);
   const [geography, setGeography]   = useState("");

@@ -101,7 +101,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/variables.csv")
+    fetch("/1yr_clean_varnames.csv")
       .then(r => r.text())
       .then(text => { setCsvText(text); setCommitted(text); })
       .catch(() => {})

@@ -139,7 +139,7 @@ function parseCSV(text) {
   const rawHeaders = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
   const col = name => rawHeaders.findIndex(h => h === name);
   const idCol        = col("id") !== -1 ? col("id") : col("variable");
-  const labelCol     = col("label");
+  const labelCol     = col("label_clean");
   const detailCol    = col("detail");
   const labelVarCol  = col("label_varname");
   const detailVarCol = col("detail_varname");

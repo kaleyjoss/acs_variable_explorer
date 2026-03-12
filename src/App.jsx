@@ -242,7 +242,7 @@ export default function App() {
   const [year, setYear]             = useState("");
 
   useEffect(() => {
-    fetch("/1yr_clean_varnames_shortened.csv")
+    fetch("/1yr_clean_varnames.csv")
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
       .then(text => { const t = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); })
       .catch(e => setFetchError(e.message))

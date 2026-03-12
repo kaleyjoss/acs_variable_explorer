@@ -1,19 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 
-const SAMPLE_CSV = `ID,Detail,Label,Unnamed: 3,Unnamed: 4,Required,Attributes,Limit,Predicate Type,Group,label_varname,detail_varname,both_varname
-AIANHH,Geography,,,,not required,,0,(not a predicate),,,geography,__geography
-ANRC,Geography,,,,not required,,0,(not a predicate),,,geography,__geography
-B01001_001E,Estimate!!Total:,Sex by Age,,,not required,"B01001_001EA, B01001_001M, B01001_001MA",0,int,B01001,sex_by_age,est_tot,sex_by_age__est_tot
-B01001_002E,Estimate!!Total:!!Male:,Sex by Age,,,not required,"B01001_002EA, B01001_002M, B01001_002MA",0,int,B01001,sex_by_age,est_tot_male,sex_by_age__est_tot_male
-B01001_003E,Estimate!!Total:!!Male:!!Under 5 years,Sex by Age,,,not required,"B01001_003EA, B01001_003M, B01001_003MA",0,int,B01001,sex_by_age,est_tot_male_under_5_yrs,sex_by_age__est_tot_male_under_5_yrs
-B01001_004E,Estimate!!Total:!!Male:!!5 to 9 years,Sex by Age,,,not required,"B01001_004EA, B01001_004M, B01001_004MA",0,int,B01001,sex_by_age,est_tot_male_5-9_yrs,sex_by_age__est_tot_male_5-9_yrs
-B01001_005E,Estimate!!Total:!!Male:!!10 to 14 years,Sex by Age,,,not required,"B01001_005EA, B01001_005M, B01001_005MA",0,int,B01001,sex_by_age,est_tot_male_10-14_yrs,sex_by_age__est_tot_male_10-14_yrs
-B01001_006E,Estimate!!Total:!!Male:!!15 to 17 years,Sex by Age,,,not required,"B01001_006EA, B01001_006M, B01001_006MA",0,int,B01001,sex_by_age,est_tot_male_15-17_yrs,sex_by_age__est_tot_male_15-17_yrs
-B01001_007E,Estimate!!Total:!!Male:!!18 and 19 years,Sex by Age,,,not required,"B01001_007EA, B01001_007M, B01001_007MA",0,int,B01001,sex_by_age,est_tot_male_18_and_19_yrs,sex_by_age__est_tot_male_18_and_19_yrs
-B01001_008E,Estimate!!Total:!!Male:!!20 years,Sex by Age,,,not required,"B01001_008EA, B01001_008M, B01001_008MA",0,int,B01001,sex_by_age,est_tot_male_20_yrs,sex_by_age__est_tot_male_20_yrs
-B01001_009E,Estimate!!Total:!!Male:!!21 years,Sex by Age,,,not required,"B01001_009EA, B01001_009M, B01001_009MA",0,int,B01001,sex_by_age,est_tot_male_21_yrs,sex_by_age__est_tot_male_21_yrs
-B01001_010E,Estimate!!Total:!!Male:!!22 to 24 years,Sex by Age,,,not required,"B01001_010EA, B01001_010M, B01001_010MA",0,int,B01001,sex_by_age,est_tot_male_22-24_yrs,sex_by_age__est_tot_male_22-24_yrs
-B01001_011E,Estimate!!Total:!!Male:!!25 to 29 years,Sex by Age,,,not required,"B01001_011EA, B01001_011M, B01001_011MA",0,int,B01001,sex_by_age,est_tot_male_25-29_yrs,sex_by_age__est_tot_male_25-29_yrs`;
+
 
 const ALLOWED_COLS = new Set(["variable", "id", "detail", "label","label_varname","detail_varname","both_varname"]);
 
@@ -105,12 +92,21 @@ function generateRScript(label, rows) {
     .filter(r => { const k = r.detailVar || r.bothVar || "est_var"; return seen.has(k) ? false : seen.add(k); })
     .map(r => `    ${r.detailVar || r.bothVar || "est_var"} = "${stripE(r.id)}"`)
     .join(",\n");
-  return `${tableName} <- get_acs(\n  geography = "____",\n  year = "____",\n  variables = c(\n${varLines}\n  ),\n)`;
+  return `${tableName} <- get_acs(\n  geography = "____",\n  state = "____",\n  variables = c(\n${varLines}\n  ),\n  year = ____\n)`;
 }
 
 export default function App() {
-  const [csvText, setCsvText] = useState(SAMPLE_CSV);
-  const [committed, setCommitted] = useState(SAMPLE_CSV);
+  const [csvText, setCsvText] = useState("");
+  const [committed, setCommitted] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/variables.csv")
+      .then(r => r.text())
+      .then(text => { setCsvText(text); setCommitted(text); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
   const [selectedLabel, setSelectedLabel] = useState(null);
   const [detailPath, setDetailPath] = useState([]);
   const [search, setSearch] = useState("");
@@ -223,7 +219,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Search */}
+      {loading ? (
+        <p style={{ color: "#64748b", fontSize: 14 }}>Loading data…</p>
+      ) : rows.length === 0 ? (
+        <p style={{ color: "#dc2626", fontSize: 14 }}>No data loaded. Upload a CSV above.</p>
+      ) : null}
       {!selectedLabel && (
         <div style={{ position: "relative", marginBottom: 16 }}>
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }}>🔍</span>

@@ -84,15 +84,25 @@ function getMostGeneralId(rows, detailPath) {
   return sorted[0]?.id || null;
 }
 
-function generateRScript(label, rows) {
+const GEOGRAPHIES = ["","US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
+
+const STATES = ["","Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
+
+const YEARS = ["", ...Array.from({length: 21}, (_, i) => 2005 + i)];
+
+function generateRScript(label, rows, geography, state, year) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
   const tableName = rows[0]?.labelVar || label.toLowerCase().replace(/\s+/g, "_");
   const seen = new Set();
+  const safeName = name => name.replace(/-/g, "_");
   const varLines = rows
-    .filter(r => { const k = r.detailVar || r.bothVar || "est_var"; return seen.has(k) ? false : seen.add(k); })
-    .map(r => `    ${r.detailVar || r.bothVar || "est_var"} = "${stripE(r.id)}"`)
+    .filter(r => { const k = safeName(r.detailVar || r.bothVar || "est_var"); return seen.has(k) ? false : seen.add(k); })
+    .map(r => `    ${safeName(r.detailVar || r.bothVar || "est_var")} = "${stripE(r.id)}"`)
     .join(",\n");
-  return `${tableName} <- get_acs(\n  geography = "____",\n  year = "____",\n  variables = c(\n${varLines}\n  ),\n)`;
+  const geoLine = geography ? `  geography = "${geography}",\n` : "";
+  const stateLine = state ? `  state = "${state}",\n` : "";
+  const yearLine = year ? `  year = ${year}\n` : "";
+  return `\`\`\`{r census_data}\nlibrary(tidyverse)\nlibrary(tidycensus)\n\n${tableName} <- get_acs(\n${geoLine}${stateLine}  variables = c(\n${varLines}\n  ),\n${yearLine})\n\`\`\``;
 }
 
 export default function App() {
@@ -121,8 +131,10 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [copied, setCopied] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [geography, setGeography] = useState("");
+  const [state, setState] = useState("");
+  const [year, setYear] = useState("");
   const [rScript, setRScript] = useState("");
-  const [rCopied, setRCopied] = useState(false);
 
   const parsed = useMemo(() => parseCSV(committed), [committed]);
   const rows = parsed.rows || [];
@@ -161,7 +173,7 @@ export default function App() {
         const parts = r.detail.split("!!").map(p => p.trim());
         return detailPath.every((step, i) => parts[i] === step);
       });
-      setRScript(generateRScript(selectedLabel, scopedRows));
+      setRScript(script);
     } catch (e) {
       setRScript("// Error generating script. Please try again.");
     }
@@ -288,6 +300,23 @@ export default function App() {
                 <Btn active={i === detailPath.length - 1} onClick={() => setDetailPath(detailPath.slice(0, i + 1))} label={step} />
               </span>
             ))}
+          </div>
+
+          {/* ACS parameter dropdowns */}
+          <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>ACS Params</span>
+            <select value={geography} onChange={e => setGeography(e.target.value)} style={selStyle}>
+              <option value="">Geography…</option>
+              {GEOGRAPHIES.filter(g => g).map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+            <select value={state} onChange={e => setState(e.target.value)} style={selStyle}>
+              <option value="">State…</option>
+              {STATES.filter(s => s).map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={year} onChange={e => setYear(e.target.value)} style={selStyle}>
+              <option value="">Year…</option>
+              {YEARS.filter(y => y).map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
           </div>
 
           {/* Current variable ID + action buttons */}

@@ -1,8 +1,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 
+const GEOGRAPHIES = ["US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
+const STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
+const YEARS = Array.from({length: 21}, (_, i) => 2005 + i);
 
-
-const ALLOWED_COLS = new Set(["variable", "id", "detail", "label","label_varname","detail_varname","both_varname"]);
+const ALLOWED_COLS = new Set(["id","variable","detail","label","label_varname","detail_varname","both_varname"]);
 
 function parseCSVLine(line) {
   const cols = [];
@@ -18,31 +20,35 @@ function parseCSVLine(line) {
 }
 
 function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  const rawHeaders = parseCSVLine(lines[0]).map(h => h.toLowerCase());
-  const headers = rawHeaders.map(h => ALLOWED_COLS.has(h) ? h : null);
-  const idCol = headers.findIndex(h => h === "id" || h === "variable");
-  const labelCol = headers.findIndex(h => h === "label");
-  const labelVarCol = headers.findIndex(h => h === "label_varname");
-  const detailCol = headers.findIndex(h => h === "detail");
-  const detailVarCol = headers.findIndex(h => h === "detail_varname");
-  const bothVarCol = headers.findIndex(h => h === "both_varname");
+  const lines = text.trim().replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const rawHeaders = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
+  const col = name => rawHeaders.findIndex(h => h === name);
+
+  const idCol        = col("id") !== -1 ? col("id") : col("variable");
+  const labelCol     = col("label");
+  const detailCol    = col("detail");
+  const labelVarCol  = col("label_varname");
+  const detailVarCol = col("detail_varname");
+  const bothVarCol   = col("both_varname");
+
   if (idCol === -1 || labelCol === -1)
-    return { error: `Expected "id" (or "variable") and "label" columns. Found: ${rawHeaders.join(", ")}` };
+    return { error: `Expected "id" and "label" columns. Found: ${rawHeaders.join(", ")}` };
+
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
     if (cols.length < 2) continue;
-    const id = cols[idCol];
-    const label = cols[labelCol]?.replace(/^"|"$/g, "");
+    const id     = cols[idCol];
+    const label  = cols[labelCol]?.replace(/^"|"$/g, "");
     const detail = detailCol !== -1 ? cols[detailCol]?.replace(/^"|"$/g, "") || null : null;
-    const idLower = id?.toLowerCase();
-    const bothVar = bothVarCol !== -1 ? cols[bothVarCol] : null;
+    const labelVar  = labelVarCol  !== -1 ? cols[labelVarCol]  : null;
     const detailVar = detailVarCol !== -1 ? cols[detailVarCol] : null;
-    const labelVar = labelVarCol !== -1 ? cols[labelVarCol] : null;
-    if (id && label && idLower !== "geoid" && idLower !== "geo_id") rows.push({ id, label, detail, bothVar, detailVar, labelVar });
+    const bothVar   = bothVarCol   !== -1 ? cols[bothVarCol]   : null;
+    const idLower = id?.toLowerCase();
+    if (id && label && idLower !== "geoid" && idLower !== "geo_id")
+      rows.push({ id, label, detail, labelVar, detailVar, bothVar });
   }
-  return { rows, hasDetail: detailCol !== -1 };
+  return { rows };
 }
 
 function buildDetailTree(rows) {
@@ -76,69 +82,55 @@ function getMostGeneralId(rows, detailPath) {
     return detailPath.every((step, i) => parts[i] === step);
   });
   if (!matching.length) return null;
-  const sorted = [...matching].sort((a, b) => {
-    const aLen = a.detail ? a.detail.split("!!").length : 0;
-    const bLen = b.detail ? b.detail.split("!!").length : 0;
-    return aLen - bLen;
-  });
-  return sorted[0]?.id || null;
+  return [...matching].sort((a, b) =>
+    (a.detail?.split("!!").length || 0) - (b.detail?.split("!!").length || 0)
+  )[0]?.id || null;
 }
-
-const GEOGRAPHIES = ["","US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
-
-const STATES = ["","Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
-
-const YEARS = ["", ...Array.from({length: 21}, (_, i) => 2005 + i)];
 
 function generateRScript(label, rows, geography, state, year) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
+  const safeName = n => (n || "est_var").replace(/-/g, "_");
   const tableName = rows[0]?.labelVar || label.toLowerCase().replace(/\s+/g, "_");
   const seen = new Set();
-  const safeName = name => name.replace(/-/g, "_");
   const varLines = rows
-    .filter(r => { const k = safeName(r.detailVar || r.bothVar || "est_var"); return seen.has(k) ? false : seen.add(k); })
-    .map(r => `    ${safeName(r.detailVar || r.bothVar || "est_var")} = "${stripE(r.id)}"`)
+    .filter(r => { const k = safeName(r.detailVar || r.bothVar); return seen.has(k) ? false : seen.add(k); })
+    .map(r => `    ${safeName(r.detailVar || r.bothVar)} = "${stripE(r.id)}"`)
     .join(",\n");
-  const geoLine = geography ? `  geography = "${geography}",\n` : "";
-  const stateLine = state ? `  state = "${state}",\n` : "";
-  const yearLine = year ? `  year = ${year}\n` : "";
+  const geoLine   = geography ? `  geography = "${geography}",\n` : "";
+  const stateLine = state     ? `  state = "${state}",\n`         : "";
+  const yearLine  = year      ? `  year = ${year}\n`              : "";
   return `\`\`\`{r census_data}\nlibrary(tidyverse)\nlibrary(tidycensus)\n\n${tableName} <- get_acs(\n${geoLine}${stateLine}  variables = c(\n${varLines}\n  ),\n${yearLine})\n\`\`\``;
 }
 
-export default function App() {
-  const [csvText, setCsvText] = useState("");
-  const [committed, setCommitted] = useState("");
-  const [loading, setLoading] = useState(true);
+const selStyle = { fontSize: 13, border: "1.5px solid #cbd5e1", borderRadius: 7, padding: "6px 10px", background: "white", color: "#334155", cursor: "pointer" };
 
+export default function App() {
+  const [csvText, setCsvText]       = useState("");
+  const [committed, setCommitted]   = useState("");
+  const [loading, setLoading]       = useState(true);
   const [fetchError, setFetchError] = useState("");
+  const [selectedLabel, setSelectedLabel] = useState(null);
+  const [detailPath, setDetailPath] = useState([]);
+  const [search, setSearch]         = useState("");
+  const [copied, setCopied]         = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+  const [rScript, setRScript]       = useState("");
+  const [rCopied, setRCopied]       = useState(false);
+  const [geography, setGeography]   = useState("");
+  const [state, setState]           = useState("");
+  const [year, setYear]             = useState("");
 
   useEffect(() => {
-    fetch("/1yr_clean_varnames.csv")
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.url}`);
-        return r.text();
-      })
-      .then(text => {
-        const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        setCsvText(normalized);
-        setCommitted(normalized);
-      })
+    fetch("/1yr_clean_varnames_shortened.csv")
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
+      .then(text => { const t = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); })
       .catch(e => setFetchError(e.message))
       .finally(() => setLoading(false));
   }, []);
-  const [selectedLabel, setSelectedLabel] = useState(null);
-  const [detailPath, setDetailPath] = useState([]);
-  const [search, setSearch] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [geography, setGeography] = useState("");
-  const [state, setState] = useState("");
-  const [year, setYear] = useState("");
-  const [rScript, setRScript] = useState("");
 
-  const parsed = useMemo(() => parseCSV(committed), [committed]);
-  const rows = parsed.rows || [];
-  const uniqueLabels = useMemo(() => [...new Set(rows.map(r => r.label))].sort(), [rows]);
+  const parsed       = useMemo(() => parseCSV(committed), [committed]);
+  const rows         = parsed.rows || [];
+  const uniqueLabels = useMemo(() => [...new Set(rows.map(r => r.label).filter(Boolean))].sort(), [rows]);
 
   const filteredLabels = useMemo(() => {
     if (!search) return uniqueLabels;
@@ -146,10 +138,10 @@ export default function App() {
     return uniqueLabels.filter(l => l.toLowerCase().includes(q));
   }, [uniqueLabels, search]);
 
-  const labelRows = useMemo(() => selectedLabel ? rows.filter(r => r.label === selectedLabel) : [], [rows, selectedLabel]);
-  const detailTree = useMemo(() => buildDetailTree(labelRows), [labelRows]);
+  const labelRows      = useMemo(() => selectedLabel ? rows.filter(r => r.label === selectedLabel) : [], [rows, selectedLabel]);
+  const detailTree     = useMemo(() => buildDetailTree(labelRows), [labelRows]);
   const detailChildren = useMemo(() => getDetailChildren(detailTree, detailPath), [detailTree, detailPath]);
-  const currentId = useMemo(() => getMostGeneralId(labelRows, detailPath), [labelRows, detailPath]);
+  const currentId      = useMemo(() => getMostGeneralId(labelRows, detailPath), [labelRows, detailPath]);
 
   const labelBestId = useMemo(() => {
     const map = {};
@@ -173,9 +165,9 @@ export default function App() {
         const parts = r.detail.split("!!").map(p => p.trim());
         return detailPath.every((step, i) => parts[i] === step);
       });
-      setRScript(script);
+      setRScript(generateRScript(selectedLabel, scopedRows, geography, state, year));
     } catch (e) {
-      setRScript("// Error generating script. Please try again.");
+      setRScript("// Error generating script.");
     }
   };
 
@@ -185,16 +177,16 @@ export default function App() {
     setTimeout(() => setRCopied(false), 1500);
   };
 
-  const selectLabel = (label) => { setSelectedLabel(label); setDetailPath([]); setSearch(""); setRScript(""); };
-  const back = () => { setSelectedLabel(null); setDetailPath([]); setRScript(""); };
-
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (ev) => { setCsvText(ev.target.result); setCommitted(ev.target.result); };
+    reader.onload = ev => { const t = ev.target.result.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); };
     reader.readAsText(file);
   };
+
+  const selectLabel = label => { setSelectedLabel(label); setDetailPath([]); setSearch(""); setRScript(""); };
+  const back = () => { setSelectedLabel(null); setDetailPath([]); setRScript(""); };
 
   const Btn = ({ active, onClick, label }) => (
     <button onClick={onClick} style={{ background: active ? "#1e3a5f" : "white", color: active ? "white" : "#1e3a5f", border: "1.5px solid #1e3a5f", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
@@ -221,14 +213,10 @@ export default function App() {
       {showUpload && (
         <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: 16, marginBottom: 20 }}>
           <p style={{ margin: "0 0 8px", fontSize: 13, color: "#475569" }}>
-            Recognized columns:{" "}
-            {[...ALLOWED_COLS].map(w => <code key={w} style={{ background: "#f1f5f9", padding: "1px 6px", borderRadius: 4, fontSize: 12, marginRight: 4 }}>{w}</code>)}
-            — needs at least <strong>id</strong> (or <strong>variable</strong>) and <strong>label</strong>.
-            <strong> detail</strong> (split by <code style={{ background: "#f1f5f9", padding: "1px 4px", borderRadius: 3, fontSize: 12 }}>!!</code>) is optional.
+            Upload a CSV with <strong>ID</strong>, <strong>Label</strong>, <strong>Detail</strong>, <strong>label_varname</strong>, <strong>detail_varname</strong> columns.
           </p>
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
             <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ fontSize: 13 }} />
-            <span style={{ color: "#94a3b8", fontSize: 13 }}>or paste below</span>
           </div>
           <textarea value={csvText} onChange={e => setCsvText(e.target.value)}
             style={{ width: "100%", height: 100, fontSize: 12, fontFamily: "monospace", border: "1px solid #cbd5e1", borderRadius: 6, padding: 8, boxSizing: "border-box", resize: "vertical" }} />
@@ -240,25 +228,38 @@ export default function App() {
         </div>
       )}
 
-      {loading ? (
-        <p style={{ color: "#64748b", fontSize: 14 }}>Loading data…</p>
-      ) : fetchError ? (
-        <p style={{ color: "#dc2626", fontSize: 14 }}>Failed to load CSV: {fetchError}</p>
-      ) : rows.length === 0 ? (
-        <p style={{ color: "#dc2626", fontSize: 14 }}>No data loaded. Upload a CSV above.</p>
-      ) : null}
+      {/* Search */}
       {!selectedLabel && (
-        <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "relative", marginBottom: 12 }}>
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }}>🔍</span>
-          <input placeholder="Search topics…" value={search}
-            onChange={e => setSearch(e.target.value)}
+          <input placeholder="Search topics…" value={search} onChange={e => setSearch(e.target.value)}
             style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px 11px 38px", fontSize: 14, border: "1.5px solid #cbd5e1", borderRadius: 10, outline: "none", background: "white" }} />
-          {search && (
-            <button onClick={() => setSearch("")}
-              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#94a3b8" }}>×</button>
-          )}
+          {search && <button onClick={() => setSearch("")}
+            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#94a3b8" }}>×</button>}
         </div>
       )}
+
+      {/* ACS Param Dropdowns — always visible */}
+      <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "12px 16px", marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>ACS Params</span>
+        <select value={geography} onChange={e => setGeography(e.target.value)} style={selStyle}>
+          <option value="">Geography…</option>
+          {GEOGRAPHIES.map(g => <option key={g} value={g}>{g}</option>)}
+        </select>
+        <select value={state} onChange={e => setState(e.target.value)} style={selStyle}>
+          <option value="">State…</option>
+          {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={year} onChange={e => setYear(e.target.value)} style={selStyle}>
+          <option value="">Year…</option>
+          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      {/* Status messages */}
+      {loading && <p style={{ color: "#64748b", fontSize: 14 }}>Loading data…</p>}
+      {fetchError && <p style={{ color: "#dc2626", fontSize: 14 }}>Failed to load CSV: {fetchError}</p>}
+      {!loading && !fetchError && rows.length === 0 && <p style={{ color: "#dc2626", fontSize: 14 }}>No data loaded. Upload a CSV above.</p>}
 
       {/* Label list */}
       {!selectedLabel && (
@@ -268,7 +269,7 @@ export default function App() {
               {search ? `RESULTS · ${filteredLabels.length}` : `ALL TOPICS · ${uniqueLabels.length}`}
             </span>
           </div>
-          {filteredLabels.length === 0 && (
+          {filteredLabels.length === 0 && search && (
             <p style={{ padding: 24, color: "#94a3b8", textAlign: "center", margin: 0 }}>No topics match "{search}"</p>
           )}
           {filteredLabels.map((label, i) => (
@@ -302,23 +303,6 @@ export default function App() {
             ))}
           </div>
 
-          {/* ACS parameter dropdowns */}
-          <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: "12px 16px", marginBottom: 14, display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>ACS Params</span>
-            <select value={geography} onChange={e => setGeography(e.target.value)} style={selStyle}>
-              <option value="">Geography…</option>
-              {GEOGRAPHIES.filter(g => g).map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-            <select value={state} onChange={e => setState(e.target.value)} style={selStyle}>
-              <option value="">State…</option>
-              {STATES.filter(s => s).map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select value={year} onChange={e => setYear(e.target.value)} style={selStyle}>
-              <option value="">Year…</option>
-              {YEARS.filter(y => y).map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-
           {/* Current variable ID + action buttons */}
           {currentId && (
             <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
@@ -348,7 +332,7 @@ export default function App() {
 
           {/* R Script output */}
           {rScript && (
-            <div style={{ background: "#1e1e2e", borderRadius: 10, padding: 16, marginBottom: 14, position: "relative" }}>
+            <div style={{ background: "#1e1e2e", borderRadius: 10, padding: 16, marginBottom: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                 <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>R Script — tidycensus</span>
                 <button onClick={handleCopyR}

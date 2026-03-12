@@ -14,7 +14,7 @@ function parseCSVLine(line) {
     else { cur += ch; }
   }
   cols.push(cur);
-  return cols.map(c => c.trim());
+  return cols.map(c => c.trim().replace(/\r$/, ""));
 }
 
 function parseCSV(text) {
@@ -92,7 +92,7 @@ function generateRScript(label, rows) {
     .filter(r => { const k = r.detailVar || r.bothVar || "est_var"; return seen.has(k) ? false : seen.add(k); })
     .map(r => `    ${r.detailVar || r.bothVar || "est_var"} = "${stripE(r.id)}"`)
     .join(",\n");
-  return `${tableName} <- get_acs(\n  geography = "____",\n  state = "____",\n  variables = c(\n${varLines}\n  ),\n  year = ____\n)`;
+  return `${tableName} <- get_acs(\n  geography = "____",\n  year = "____",\n  variables = c(\n${varLines}\n  ),\n)`;
 }
 
 export default function App() {
@@ -100,11 +100,20 @@ export default function App() {
   const [committed, setCommitted] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [fetchError, setFetchError] = useState("");
+
   useEffect(() => {
     fetch("/1yr_clean_varnames.csv")
-      .then(r => r.text())
-      .then(text => { setCsvText(text); setCommitted(text); })
-      .catch(() => {})
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.url}`);
+        return r.text();
+      })
+      .then(text => {
+        const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        setCsvText(normalized);
+        setCommitted(normalized);
+      })
+      .catch(e => setFetchError(e.message))
       .finally(() => setLoading(false));
   }, []);
   const [selectedLabel, setSelectedLabel] = useState(null);
@@ -221,6 +230,8 @@ export default function App() {
 
       {loading ? (
         <p style={{ color: "#64748b", fontSize: 14 }}>Loading data…</p>
+      ) : fetchError ? (
+        <p style={{ color: "#dc2626", fontSize: 14 }}>Failed to load CSV: {fetchError}</p>
       ) : rows.length === 0 ? (
         <p style={{ color: "#dc2626", fontSize: 14 }}>No data loaded. Upload a CSV above.</p>
       ) : null}

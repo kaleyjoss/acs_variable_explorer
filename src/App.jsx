@@ -147,12 +147,13 @@ function parseCSV(text) {
 function generateRScript(queryVars, geography, state, years) {
   const stripE = id => id.endsWith("E") ? id.slice(0,-1) : id;
   const safeName = n => (n||"variable").replace(/[^a-zA-Z0-9_]/g,"_");
+  const tableName = geography ? `by_${safeName(geography)}` : "acs_data";
   const multiYear = years.length > 1;
   const ind = multiYear ? "      " : "  ";
 
   const seen = new Set();
   const varLines = queryVars.map(v => {
-    let name = safeName(v.row?.detailVar || v.row?.bothVar || v.row?.labelVar || v.id);
+    let name = safeName(v.row?.bothVar || v.row?.labelVar || v.id);
     if (seen.has(name)) name = name + "_" + v.id.replace(/\W/g,"");
     seen.add(name);
     return `${ind}  ${name} = "${stripE(v.id)}"`;
@@ -258,13 +259,20 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years 
   const [rCopied, setRCopied] = useState(false);
   const [genError, setGenError] = useState("");
 
+  const tryGenerate = useCallback(() => {
+    if (!geography || years.length === 0 || queryVars.length === 0) return;
+    setGenError("");
+    setRScript(generateRScript(queryVars, geography, selState, years));
+  }, [queryVars, geography, selState, years]);
+
+  useEffect(() => { tryGenerate(); }, [tryGenerate]);
+
   const handleGenerate = () => {
     const missing = [];
     if (!geography) missing.push("Geography");
     if (years.length === 0) missing.push("Year(s)");
     if (missing.length) { setGenError(`Please select: ${missing.join(" and ")}`); return; }
-    setGenError("");
-    setRScript(generateRScript(queryVars, geography, selState, years));
+    tryGenerate();
   };
 
   const handleCopy = () => { clipboardCopy(rScript); setRCopied(true); setTimeout(()=>setRCopied(false),1500); };

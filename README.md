@@ -1,4 +1,7 @@
-# Variable Explorer for the American Community Survey
+# [Variable Explorer for the American Community Survey](acs-variable-explorer.vercel.app)
+
+Webapp ACS variable explorer which can also render an API call for selected variables using tidycensus in R. 
+
 
 - Explanation of each variable: [2024 ACS Variable Descriptions](/public/2024_ACSSubjectDefinitions.pdf) 
 
@@ -8,7 +11,9 @@
 
 - Summary tables of which table/topics are within 1year and 5year ACS and which geographic populations are covered by different tables [here](public/2024_DataProductList.xlsx)
 
-
+## Future plan
+- Add 5year variables
+- Add STATA, python, direct-API script rendering options
 
 
 ## Deployment Information

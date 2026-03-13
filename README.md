@@ -11,7 +11,13 @@ Webapp ACS variable explorer which can also render an API call for selected vari
 
 - Summary tables of which table/topics are within 1year and 5year ACS and which geographic populations are covered by different tables [here](public/2024_DataProductList.xlsx)
 
-## Future plan
+## Future plans
+- Add ability to filter by 'universe' of population and then select variables you want (ie whole population, specific race, just women, etc)
+- Add information about each variable when you click on it-- 
+    - Variable definitions and history from [Subject Definitions](/public/2024_ACSSubjectDefinitions.pdf)
+    - Allocation (imputation) rate over time
+    - Margin of error over time
+    - If it's in 5y, 1y or both
 - Add wide format option (will have to work around issues with too-long variable names...)
 - Add 5year variables
 - Add STATA, python, direct-API script rendering options

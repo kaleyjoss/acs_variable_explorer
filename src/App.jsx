@@ -325,23 +325,25 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years 
 export default function App() {
   const [csvText, setCsvText]       = useState("");
   const [committed, setCommitted]   = useState("");
+  const [loading, setLoading]       = useState(true);
+  const [fetchError, setFetchError] = useState("");
   const [labelPath, setLabelPath]   = useState([]);
   const [detailPath, setDetailPath] = useState([]);
   const [search, setSearch]         = useState("");
   const [added, setAdded]           = useState(false);
-  const [showUpload, setShowUpload] = useState(true);
-  const [geography, setGeography]   = useState("");
-  const [selState, setSelState]     = useState("");
-  const [years, setYears]           = useState([]);
-  const [queryVars, setQueryVars]   = useState([]);
+  const [showUpload, setShowUpload] = useState(false);
 
   useEffect(() => {
     fetch("/1yr_clean_varnames.csv")
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
-      .then(text => { const t = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); })
+      .then(text => { const t = text.replace(/\r\n/g,"\n").replace(/\r/g,"\n"); setCsvText(t); setCommitted(t); })
       .catch(e => setFetchError(e.message))
       .finally(() => setLoading(false));
-    }, []);
+  }, []);
+  const [geography, setGeography]   = useState("");
+  const [selState, setSelState]     = useState("");
+  const [years, setYears]           = useState([]);
+  const [queryVars, setQueryVars]   = useState([]);
 
   const parsed       = useMemo(()=>parseCSV(committed),[committed]);
   const rows         = parsed.rows||[];
@@ -417,7 +419,9 @@ export default function App() {
         </div>
       )}
 
-      {!hasData && !showUpload && <p style={{ color:"#dc2626", fontSize:14 }}>No data loaded. Click "Upload CSV" above.</p>}
+      {loading && <p style={{ color:"#64748b", fontSize:14 }}>Loading variables…</p>}
+      {fetchError && <p style={{ color:"#dc2626", fontSize:13 }}>Could not auto-load CSV ({fetchError}) — upload it manually below.</p>}
+      {!hasData && !loading && !showUpload && <p style={{ color:"#dc2626", fontSize:14 }}>No data loaded. Click "Upload CSV" above.</p>}
 
       {hasData && (<>
         {/* Search */}

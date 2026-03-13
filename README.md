@@ -12,6 +12,7 @@ Webapp ACS variable explorer which can also render an API call for selected vari
 - Summary tables of which table/topics are within 1year and 5year ACS and which geographic populations are covered by different tables [here](public/2024_DataProductList.xlsx)
 
 ## Future plan
+- Add wide format option (will have to work around issues with too-long variable names...)
 - Add 5year variables
 - Add STATA, python, direct-API script rendering options
 

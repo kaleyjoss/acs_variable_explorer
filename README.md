@@ -2,7 +2,13 @@
 
 Webapp ACS variable explorer which can also render an API call for selected variables using tidycensus in R. 
 
+In order to generate the variable names from the ACS label + 'detail', I copied all the variables for 1 year ACS variables into a csv. Then I generated label_varname and detail_varname, using scripting to modify the ACS labels (can be found and modified within creating_variable_namecases.ipynb). Those two labels are then combined to create the variable both_varname: {label_varname}__{detail_varname}. 
 
+Currently the R scripting code assigns both_varname to the variable to retain all identifying information about variables query'd from across different tables.
+
+The variable parsing and csv is available in /public. The UI for this webpage was written by Claude, developed in implementation steps demonstrated the commits of this repository.  
+
+## Data Dictionary and Sources
 - Explanation of each variable: [2024 ACS Variable Descriptions](/public/2024_ACSSubjectDefinitions.pdf) 
 
 - ACS Detailed historical codelists and error estimations [here](https://www.census.gov/programs-surveys/acs/technical-documentation/code-lists.html).
@@ -22,6 +28,7 @@ Webapp ACS variable explorer which can also render an API call for selected vari
 - Add 5year variables
 - Add STATA, python, direct-API script rendering options
 
+***UI written with Claude code***
 
 ## Deployment Information
 

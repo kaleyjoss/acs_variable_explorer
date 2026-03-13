@@ -363,7 +363,7 @@ export default function App() {
 
   const filteredLabels = useMemo(()=>{ if(!search) return []; const q=search.toLowerCase(); return uniqueLabels.filter(l=>l.toLowerCase().includes(q)); },[uniqueLabels,search]);
 
-  const goToLabel = useCallback(path=>{ setLabelPath(path); setDetailPath([]); setSearch(""); },[]);
+  const goToLabel = useCallback((path, clearSearch=true) => { setLabelPath(path); setDetailPath([]); if (clearSearch) setSearch(""); },[]);
   const navigateLabel = useCallback(path=>{ goToLabel(autoAdvancePath(labelTree,path)); },[labelTree,goToLabel]);
 
   const alreadyInQuery = currentId && queryVars.some(v=>v.id===currentId);
@@ -428,7 +428,7 @@ export default function App() {
         <div style={{ position:"relative", marginBottom:12 }}>
           <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#94a3b8" }}>🔍</span>
           <input placeholder="Search topics…" value={search}
-            onChange={e=>{ setSearch(e.target.value); if(e.target.value) goToLabel([]); }}
+            onChange={e=>{ setSearch(e.target.value); if(e.target.value) goToLabel([], false); }}
             style={{ width:"100%", boxSizing:"border-box", padding:"11px 12px 11px 38px", fontSize:14, border:"1.5px solid #cbd5e1", borderRadius:10, outline:"none", background:"white" }} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#94a3b8" }}>×</button>}
         </div>

@@ -156,7 +156,7 @@ function parseCSV(text) {
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
-function generateRScript(queryVars, geography, state, years) {
+function generateRScript(queryVars, geography, state, years, wide) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
   const safeName = n => (n || "variable").replace(/[^a-zA-Z0-9_]/g, "_");
   const tableName = geography ? "by_" + safeName(geography) : "acs_data";
@@ -169,14 +169,15 @@ function generateRScript(queryVars, geography, state, years) {
     seen.add(name);
     return ind + "  " + name + ' = "' + stripE(v.id) + '"';
   }).join(",\n");
+  const wideLine = wide ? ind + 'output = "wide",\n' : "";
   const geoLine   = geography ? ind + 'geography = "' + geography + '",\n' : "";
   const stateLine = state     ? ind + 'state = "' + state + '",\n'         : "";
   if (!multiYear) {
     const yearLine = years.length === 1 ? "  year = " + years[0] + "\n" : "";
-    return "library(tidyverse)\nlibrary(tidycensus)\n\n" + tableName + " <- get_acs(\n" + geoLine + stateLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
+    return "library(tidyverse)\nlibrary(tidycensus)\n\n" + tableName + " <- get_acs(\n" + geoLine + stateLine + wideLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
   }
   const yearsVec = "c(" + years.join(", ") + ")";
-  return "library(tidyverse)\nlibrary(tidycensus)\n\nyears <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
+  return "library(tidyverse)\nlibrary(tidycensus)\n\nyears <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
 }
 
 function clipboardCopy(text) {
@@ -285,7 +286,7 @@ function YearPicker({ years, onChange }) {
 }
 
 // ── Query basket ──────────────────────────────────────────────────────────────
-function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years }) {
+function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years, wide }) {
   const [rScript, setRScript] = useState("");
   const [rCopied, setRCopied] = useState(false);
   const [genError, setGenError] = useState("");
@@ -293,7 +294,7 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years 
   const tryGenerate = useCallback(() => {
     if (!geography || years.length === 0 || queryVars.length === 0) return;
     setGenError("");
-    setRScript(generateRScript(queryVars, geography, selState, years));
+    setRScript(generateRScript(queryVars, geography, selState, years, wide));
   }, [queryVars, geography, selState, years]);
 
   useEffect(() => { tryGenerate(); }, [tryGenerate]);
@@ -367,6 +368,7 @@ export default function App() {
   const [geography, setGeography]   = useState("");
   const [selState, setSelState]     = useState("");
   const [years, setYears]           = useState([]);
+  const [wide, setWide]             = useState(false);
   const [queryVars, setQueryVars]   = useState([]);
 
   useEffect(() => {
@@ -503,6 +505,10 @@ export default function App() {
               {STATES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <YearPicker years={years} onChange={setYears} />
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#334155", cursor: "pointer", userSelect: "none" }}>
+              <input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} style={{ accentColor: "#1e3a5f", width: 14, height: 14 }} />
+              Wide
+            </label>
             {years.length > 1 && (
               <span style={{ fontSize: 12, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 6, padding: "3px 9px", fontWeight: 600 }}>
                 map_dfr · {years.length} yrs
@@ -518,6 +524,7 @@ export default function App() {
             geography={geography}
             selState={selState}
             years={years}
+            wide={wide}
           />
 
           {/* Search results */}

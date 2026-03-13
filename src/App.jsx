@@ -2,14 +2,13 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 
 const GEOGRAPHIES = ["US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
 const STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
-const YEARS = Array.from({length: 16}, (_, i) => 2009 + i);
+const YEARS = Array.from({length: 21}, (_, i) => 2005 + i);
 
 // ── Label tree ────────────────────────────────────────────────────────────────
 function splitLabel(label) {
   if (!label) return [];
-  const tokens = label.split(/(\s+(?:by|for)\s+|\()/i);
-  const parts = [];
-  let current = tokens[0].trim();
+  const tokens = label.split(/(\s+(?:by|for)\s+)/i);
+  const parts = []; let current = tokens[0].trim();
   for (let i = 1; i < tokens.length; i += 2) {
     if (current) parts.push(current);
     current = tokens[i].trim() + " " + (tokens[i+1]||"").trim();
@@ -94,7 +93,17 @@ function getMostGeneralId(rows, detailPath) {
     return detailPath.every((step, i) => parts[i] === step);
   });
   if (!matching.length) return null;
-  return [...matching].sort((a, b) => (a.detail?.split("!!").length||0)-(b.detail?.split("!!").length||0))[0]?.id || null;
+  return [...matching].sort((a,b) => (a.detail?.split("!!").length||0)-(b.detail?.split("!!").length||0))[0]?.id || null;
+}
+
+function getMostGeneralRow(rows, detailPath) {
+  const matching = rows.filter(r => {
+    if (!r.detail) return detailPath.length === 0;
+    const parts = r.detail.split("!!").map(p => p.trim());
+    return detailPath.every((step, i) => parts[i] === step);
+  });
+  if (!matching.length) return null;
+  return [...matching].sort((a,b) => (a.detail?.split("!!").length||0)-(b.detail?.split("!!").length||0))[0] || null;
 }
 
 // ── CSV ───────────────────────────────────────────────────────────────────────
@@ -135,30 +144,42 @@ function parseCSV(text) {
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
-function generateRScript(labelPath, rows, geography, state, years) {
+function generateRScript(queryVars, geography, state, years) {
   const stripE = id => id.endsWith("E") ? id.slice(0,-1) : id;
-  const safeName = n => (n||"est_var").replace(/-/g,"_");
-  const tableName = rows[0]?.labelVar || labelPath.join("_").toLowerCase().replace(/\W+/g,"_");
-  const seen = new Set();
-  const uniqueRows = rows.filter(r => { const k=safeName(r.detailVar||r.bothVar); return seen.has(k)?false:seen.add(k); });
-
+  const safeName = n => (n||"variable").replace(/[^a-zA-Z0-9_]/g,"_");
   const multiYear = years.length > 1;
-  const indent = multiYear ? "      " : "  ";
+  const ind = multiYear ? "      " : "  ";
 
-  const varLines = uniqueRows.map(r=>`${indent}  ${safeName(r.detailVar||r.bothVar)} = "${stripE(r.id)}"`).join(",\n");
-  const geoLine   = geography ? `${indent}geography = "${geography}",\n` : "";
-  const stateLine = state     ? `${indent}state = "${state}",\n`         : "";
+  const seen = new Set();
+  const varLines = queryVars.map(v => {
+    let name = safeName(v.row?.detailVar || v.row?.bothVar || v.row?.labelVar || v.id);
+    if (seen.has(name)) name = name + "_" + v.id.replace(/\W/g,"");
+    seen.add(name);
+    return `${ind}  ${name} = "${stripE(v.id)}"`;
+  }).join(",\n");
+
+  const geoLine   = geography ? `${ind}geography = "${geography}",\n` : "";
+  const stateLine = state     ? `${ind}state = "${state}",\n`         : "";
 
   if (!multiYear) {
     const yearLine = years.length===1 ? `  year = ${years[0]}\n` : "";
-    return `\`\`\`{r census_data}\nlibrary(tidyverse)\nlibrary(tidycensus)\n\n${tableName} <- get_acs(\n${geoLine}${stateLine}  variables = c(\n${varLines}\n  ),\n${yearLine})\n\`\`\``;
+    return `library(tidyverse)\nlibrary(tidycensus)\n\nacs_data <- get_acs(\n${geoLine}${stateLine}  variables = c(\n${varLines}\n  ),\n${yearLine})`;
   }
 
   const yearsVec = `c(${years.join(", ")})`;
-  return `\`\`\`{r census_data}\nlibrary(tidyverse)\nlibrary(tidycensus)\n\nyears <- ${yearsVec}\n\n${tableName} <- map_dfr(years, \\(yr) {\n  get_acs(\n${geoLine}${stateLine}    variables = c(\n${varLines}\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})\n\`\`\``;
+  return `library(tidyverse)\nlibrary(tidycensus)\n\nyears <- ${yearsVec}\n\nacs_data <- map_dfr(years, \\(yr) {\n  get_acs(\n${geoLine}${stateLine}    variables = c(\n${varLines}\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})`;
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+function clipboardCopy(text) {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch {}
+}
+
+// ── Shared styles ─────────────────────────────────────────────────────────────
 const selStyle = { fontSize:13, border:"1.5px solid #cbd5e1", borderRadius:7, padding:"6px 10px", background:"white", color:"#334155", cursor:"pointer" };
 
 function NavBtn({ active, onClick, label, color="#1e3a5f" }) {
@@ -195,45 +216,105 @@ function ChildList({ children, onSelect, headerLabel, getBestId }) {
   );
 }
 
-// ── Multi-year picker ─────────────────────────────────────────────────────────
+// ── Year picker ───────────────────────────────────────────────────────────────
 function YearPicker({ years, onChange }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-
   useEffect(() => {
-    const handler = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
   }, []);
-
-  const toggle = y => onChange(years.includes(y) ? years.filter(x=>x!==y) : [...years, y].sort((a,b)=>a-b));
-  const clearAll = e => { e.stopPropagation(); onChange([]); };
-
+  const toggle = y => onChange(years.includes(y) ? years.filter(x=>x!==y) : [...years,y].sort((a,b)=>a-b));
   return (
     <div ref={ref} style={{ position:"relative" }}>
       <div onClick={()=>setOpen(v=>!v)}
-        style={{ ...selStyle, display:"flex", alignItems:"center", gap:6, minWidth:160, maxWidth:260, flexWrap:"wrap", cursor:"pointer", userSelect:"none" }}>
-        {years.length===0
-          ? <span style={{ color:"#94a3b8" }}>Year(s)…</span>
+        style={{ ...selStyle, display:"flex", alignItems:"center", gap:6, minWidth:160, maxWidth:280, flexWrap:"wrap", cursor:"pointer", userSelect:"none" }}>
+        {years.length===0 ? <span style={{ color:"#94a3b8" }}>Year(s)…</span>
           : years.map(y=>(
             <span key={y} style={{ background:"#1e3a5f", color:"white", borderRadius:4, padding:"1px 7px", fontSize:12, display:"inline-flex", alignItems:"center", gap:3 }}>
-              {y}
-              <span onMouseDown={e=>{e.stopPropagation(); toggle(y);}} style={{ cursor:"pointer", opacity:.75, lineHeight:1 }}>×</span>
+              {y}<span onMouseDown={e=>{e.stopPropagation();toggle(y);}} style={{ cursor:"pointer", opacity:.75 }}>×</span>
             </span>
           ))}
-        {years.length>0 && (
-          <span onMouseDown={clearAll} style={{ marginLeft:"auto", fontSize:12, color:"#94a3b8", cursor:"pointer" }}>✕ clear</span>
-        )}
+        {years.length>0 && <span onMouseDown={e=>{e.stopPropagation();onChange([]);}} style={{ marginLeft:"auto", fontSize:12, color:"#94a3b8", cursor:"pointer" }}>✕</span>}
       </div>
       {open && (
         <div onMouseDown={e=>e.stopPropagation()} style={{ position:"absolute", zIndex:999, top:"calc(100% + 4px)", left:0, background:"white", border:"1.5px solid #cbd5e1", borderRadius:8, boxShadow:"0 4px 16px rgba(0,0,0,.1)", maxHeight:220, overflowY:"auto", minWidth:130 }}>
           {YEARS.map(y=>(
-            <div key={y} onMouseDown={e=>{e.stopPropagation(); e.preventDefault(); toggle(y);}}
+            <div key={y} onMouseDown={e=>{e.stopPropagation();e.preventDefault();toggle(y);}}
               style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 12px", cursor:"pointer", fontSize:13, color:"#334155", background:years.includes(y)?"#eff6ff":"white", userSelect:"none" }}>
-              <input type="checkbox" readOnly checked={years.includes(y)} style={{ accentColor:"#1e3a5f", pointerEvents:"none" }} />
-              {y}
+              <input type="checkbox" readOnly checked={years.includes(y)} style={{ accentColor:"#1e3a5f", pointerEvents:"none" }} />{y}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Query basket ──────────────────────────────────────────────────────────────
+function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years }) {
+  const [rScript, setRScript] = useState("");
+  const [rCopied, setRCopied] = useState(false);
+  const [genError, setGenError] = useState("");
+
+  const handleGenerate = () => {
+    const missing = [];
+    if (!geography) missing.push("Geography");
+    if (years.length === 0) missing.push("Year(s)");
+    if (missing.length) { setGenError(`Please select: ${missing.join(" and ")}`); return; }
+    setGenError("");
+    setRScript(generateRScript(queryVars, geography, selState, years));
+  };
+
+  const handleCopy = () => { clipboardCopy(rScript); setRCopied(true); setTimeout(()=>setRCopied(false),1500); };
+
+  if (queryVars.length === 0) return null;
+
+  return (
+    <div style={{ background:"white", border:"2px solid #1e3a5f", borderRadius:12, padding:16, marginBottom:20 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+        <span style={{ fontSize:13, fontWeight:700, color:"#1e3a5f", textTransform:"uppercase", letterSpacing:"0.06em" }}>
+          Query · {queryVars.length} variable{queryVars.length!==1?"s":""}
+        </span>
+        <div style={{ display:"flex", gap:8 }}>
+          <button onClick={handleGenerate}
+            style={{ background:"#7c3aed", color:"white", border:"none", borderRadius:7, padding:"7px 16px", cursor:"pointer", fontWeight:700, fontSize:13 }}>
+            Create R Script
+          </button>
+          <button onClick={onClear}
+            style={{ background:"white", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:7, padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:600 }}>
+            Clear all
+          </button>
+        </div>
+      </div>
+
+      {/* Variable chips */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: genError||rScript ? 12 : 0 }}>
+        {queryVars.map(v=>(
+          <div key={v.uid} style={{ display:"inline-flex", alignItems:"center", gap:6, background:"#eff6ff", border:"1px solid #bfdbfe", borderRadius:6, padding:"4px 10px", fontSize:12 }}>
+            <code style={{ color:"#1e40af", fontWeight:700 }}>{v.id}</code>
+            <span style={{ color:"#64748b" }}>—</span>
+            <span style={{ color:"#475569", maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.displayName}</span>
+            <span onClick={()=>onRemove(v.uid)} style={{ cursor:"pointer", color:"#94a3b8", fontSize:15, lineHeight:1, marginLeft:2 }}>×</span>
+          </div>
+        ))}
+      </div>
+
+      {genError && <p style={{ margin:"0 0 10px", fontSize:12, color:"#dc2626" }}>{genError}</p>}
+
+      {rScript && (
+        <div style={{ background:"#1e1e2e", borderRadius:10, padding:14 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:12, color:"#a78bfa", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+              R Script — tidycensus{years.length>1?` (map_dfr · ${years.length} yrs)`:""}
+            </span>
+            <button onClick={handleCopy}
+              style={{ background:rCopied?"#10b981":"#7c3aed", color:"white", border:"none", borderRadius:6, padding:"5px 14px", cursor:"pointer", fontWeight:700, fontSize:12 }}>
+              {rCopied?"✓ Copied!":"Copy"}
+            </button>
+          </div>
+          <pre style={{ margin:0, fontSize:12.5, color:"#e2e8f0", fontFamily:"monospace", whiteSpace:"pre-wrap", lineHeight:1.6, textAlign:"left" }}>{rScript}</pre>
         </div>
       )}
     </div>
@@ -247,21 +328,12 @@ export default function App() {
   const [labelPath, setLabelPath]   = useState([]);
   const [detailPath, setDetailPath] = useState([]);
   const [search, setSearch]         = useState("");
-  const [copied, setCopied]         = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [rScript, setRScript]       = useState("");
-  const [rCopied, setRCopied]       = useState(false);
+  const [added, setAdded]           = useState(false);
+  const [showUpload, setShowUpload] = useState(true);
   const [geography, setGeography]   = useState("");
   const [selState, setSelState]     = useState("");
   const [years, setYears]           = useState([]);
-
-  useEffect(() => {
-    fetch("/1yr_clean_varnames.csv")
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.text(); })
-      .then(text => { const t = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); })
-      .catch(e => setFetchError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+  const [queryVars, setQueryVars]   = useState([]);
 
   const parsed       = useMemo(()=>parseCSV(committed),[committed]);
   const rows         = parsed.rows||[];
@@ -273,6 +345,7 @@ export default function App() {
   const detailTree     = useMemo(()=>buildDetailTree(labelRows),[labelRows]);
   const detailChildren = useMemo(()=>getDetailChildren(detailTree,detailPath),[detailTree,detailPath]);
   const currentId      = useMemo(()=>getMostGeneralId(labelRows,detailPath),[labelRows,detailPath]);
+  const currentRow     = useMemo(()=>getMostGeneralRow(labelRows,detailPath),[labelRows,detailPath]);
 
   const isAtRoot = labelPath.length===0;
   const hasLabelChildren = Object.keys(labelChildren).length>0;
@@ -280,38 +353,17 @@ export default function App() {
 
   const filteredLabels = useMemo(()=>{ if(!search) return []; const q=search.toLowerCase(); return uniqueLabels.filter(l=>l.toLowerCase().includes(q)); },[uniqueLabels,search]);
 
-  const copy = useCallback(text=>{ navigator.clipboard.writeText(text).catch(()=>{}); setCopied(true); setTimeout(()=>setCopied(false),1500); },[]);
-
-  const goToLabel = useCallback(path=>{ setLabelPath(path); setDetailPath([]); setRScript(""); setSearch(""); },[]);
+  const goToLabel = useCallback(path=>{ setLabelPath(path); setDetailPath([]); setSearch(""); },[]);
   const navigateLabel = useCallback(path=>{ goToLabel(autoAdvancePath(labelTree,path)); },[labelTree,goToLabel]);
 
-  const [genError, setGenError] = useState("");
+  const alreadyInQuery = currentId && queryVars.some(v=>v.id===currentId);
 
-  const handleGenerateR = () => {
-    const missing = [];
-    if (!geography) missing.push("Geography");
-    if (years.length === 0) missing.push("Year(s)");
-    if (missing.length) { setGenError(`Please select: ${missing.join(" and ")}`); return; }
-    setGenError("");
-    try {
-      const scopedRows = detailPath.length===0 ? labelRows : labelRows.filter(r=>{
-        if(!r.detail) return false;
-        const parts=r.detail.split("!!").map(p=>p.trim());
-        return detailPath.every((step,i)=>parts[i]===step);
-      });
-      setRScript(generateRScript(labelPath, scopedRows, geography, selState, years));
-    } catch { setRScript("// Error generating script."); }
-  };
-
-  const handleCopyR = () => {
-    const stripped = rScript.replace(/^```\{r [^}]+\}\n/, "").replace(/\n```$/, "");
-    try {
-      const ta = document.createElement("textarea");
-      ta.value = stripped; ta.style.position = "fixed"; ta.style.opacity = "0";
-      document.body.appendChild(ta); ta.select(); document.execCommand("copy");
-      document.body.removeChild(ta);
-    } catch {}
-    setRCopied(true); setTimeout(()=>setRCopied(false),1500);
+  const handleAddToQuery = () => {
+    if (!currentId || alreadyInQuery) return;
+    const displayName = [...labelPath, ...detailPath].join(" › ");
+    setQueryVars(prev=>[...prev, { uid: `${currentId}-${Date.now()}`, id: currentId, displayName, row: currentRow }]);
+    setAdded(true);
+    setTimeout(()=>setAdded(false),1500);
   };
 
   const handleFile = e => {
@@ -330,8 +382,6 @@ export default function App() {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:20 }}>
         <div>
           <h1 style={{ margin:0, fontSize:22, fontWeight:700, color:"#1e3a5f" }}>Variable Explorer</h1>
-          <p style={{margin:"3px 0 0", fontSize:10, alignItems:"left", color:"#1e3a5f" }}>This is a webapp to navigate the data labels for API calls to the American Community Survey (ACS) data. It also generates an R script (tidycensus) to pull the data you've selected.</p>
-          <p style={{margin:"3px 0 0", fontSize:10, alignItems:"left", color:"#1e3a5f" }}>Variable info, readme, data and site on: https://github.com/kaleyjoss/acs_variable_explorer/. </p>
           <p style={{ margin:"4px 0 0", fontSize:13, color:"#64748b" }}>
             {hasData ? `${rows.length.toLocaleString()} variables · ${uniqueLabels.length} topics` : "Upload your CSV to get started"}
           </p>
@@ -375,7 +425,7 @@ export default function App() {
         <div style={{ background:"white", border:"1.5px solid #cbd5e1", borderRadius:10, padding:"12px 16px", marginBottom:16, display:"flex", flexWrap:"wrap", gap:12, alignItems:"center" }}>
           <span style={{ fontSize:12, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.06em", flexShrink:0 }}>ACS Params</span>
           <select value={geography} onChange={e=>setGeography(e.target.value)} style={selStyle}>
-            <option value="">Geography…</option>
+            <option value="">Geography… *</option>
             {GEOGRAPHIES.map(g=><option key={g} value={g}>{g}</option>)}
           </select>
           <select value={selState} onChange={e=>setSelState(e.target.value)} style={selStyle}>
@@ -383,12 +433,18 @@ export default function App() {
             {STATES.map(s=><option key={s} value={s}>{s}</option>)}
           </select>
           <YearPicker years={years} onChange={setYears} />
-          {years.length > 1 && (
-            <span style={{ fontSize:12, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"3px 9px", fontWeight:600 }}>
-              map_dfr loop · {years.length} yrs
-            </span>
-          )}
+          {years.length>1 && <span style={{ fontSize:12, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"3px 9px", fontWeight:600 }}>map_dfr · {years.length} yrs</span>}
         </div>
+
+        {/* Query basket */}
+        <QueryBasket
+          queryVars={queryVars}
+          onRemove={uid=>setQueryVars(prev=>prev.filter(v=>v.uid!==uid))}
+          onClear={()=>setQueryVars([])}
+          geography={geography}
+          selState={selState}
+          years={years}
+        />
 
         {/* Search results */}
         {search && (
@@ -432,6 +488,7 @@ export default function App() {
               </div>
             )}
 
+            {/* Variable ID box */}
             {!isAtRoot && currentId && (
               <div style={{ background:"#eff6ff", border:"1.5px solid #bfdbfe", borderRadius:10, padding:"14px 18px", marginBottom:14 }}>
                 <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:12 }}>
@@ -444,33 +501,13 @@ export default function App() {
                       {labelPath.join(" › ")}{detailPath.length>0?" · "+detailPath.join(" › "):""}
                     </p>
                   </div>
-                  <div style={{ display:"flex", flexDirection:"column", gap:8, flexShrink:0 }}>
-                    <button onClick={()=>copy(currentId)}
-                      style={{ background:copied?"#10b981":"#2563eb", color:"white", border:"none", borderRadius:8, padding:"9px 16px", cursor:"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>
-                      {copied?"✓ Copied!":"Copy ID"}
+                  <div style={{ flexShrink:0 }}>
+                    <button onClick={handleAddToQuery} disabled={alreadyInQuery}
+                      style={{ background: added?"#10b981": alreadyInQuery?"#e2e8f0":"#1e3a5f", color: alreadyInQuery?"#94a3b8":"white", border:"none", borderRadius:8, padding:"10px 18px", cursor:alreadyInQuery?"default":"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap", transition:"background .2s" }}>
+                      {added ? "✓ Added!" : alreadyInQuery ? "Already in query" : "+ Add to Query"}
                     </button>
-                    <button onClick={handleGenerateR}
-                      style={{ background:"#7c3aed", color:"white", border:"none", borderRadius:8, padding:"9px 16px", cursor:"pointer", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>
-                      Generate R Script
-                    </button>
-                    {genError && <p style={{ margin:0, fontSize:12, color:"#dc2626", maxWidth:160, lineHeight:1.4 }}>{genError}</p>}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {rScript && (
-              <div style={{ background:"#1e1e2e", borderRadius:10, padding:16, marginBottom:14 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
-                  <span style={{ fontSize:12, color:"#a78bfa", fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em" }}>
-                    R Script — tidycensus{years.length>1?` (${years.length} years → map_dfr)`:""}
-                  </span>
-                  <button onClick={handleCopyR}
-                    style={{ background:rCopied?"#10b981":"#7c3aed", color:"white", border:"none", borderRadius:6, padding:"5px 14px", cursor:"pointer", fontWeight:700, fontSize:12 }}>
-                    {rCopied?"✓ Copied!":"Copy"}
-                  </button>
-                </div>
-                <pre style={{ margin:0, fontSize:12.5, color:"#e2e8f0", fontFamily:"monospace", whiteSpace:"pre-wrap", lineHeight:1.6, textAlign:"left" }}>{rScript}</pre>
               </div>
             )}
 

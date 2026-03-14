@@ -3,6 +3,11 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 const GEOGRAPHIES = ["US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
 const STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
 const YEARS = Array.from({length: 21}, (_, i) => 2005 + i);
+const ACS_SERIES = [
+  { key: "1yr", label: "1-Year ACS Estimates", file: "/1yr_clean_varnames.csv", color: "#1e3a5f" },
+  { key: "5yr", label: "5-Year ACS Estimates", file: "/5yr_clean_varnames.csv", color: "#5b21b6" },
+];
+
 const PINNED_TOPICS = [
   "ACS DEMOGRAPHIC AND HOUSING ESTIMATES",
   "SELECTED ECONOMIC CHARACTERISTICS",
@@ -470,6 +475,7 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
+  const [series, setSeries]         = useState("1yr");
   const [csvText, setCsvText]       = useState("");
   const [committed, setCommitted]   = useState("");
   const [loading, setLoading]       = useState(true);
@@ -485,13 +491,23 @@ export default function App() {
   const [wide, setWide]             = useState(false);
   const [queryVars, setQueryVars]   = useState([]);
 
+  const activeSeries = ACS_SERIES.find(s => s.key === series);
+
   useEffect(() => {
-    fetch("/1yr_clean_varnames.csv")
+    setLoading(true);
+    setFetchError("");
+    setCommitted("");
+    setCsvText("");
+    setLabelPath([]);
+    setDetailPath([]);
+    setSearch("");
+    setQueryVars([]);
+    fetch(activeSeries.file)
       .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
       .then(text => { const t = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n"); setCsvText(t); setCommitted(t); })
       .catch(e => setFetchError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [series]);
 
   const parsed       = useMemo(() => parseCSV(committed), [committed]);
   const rows         = parsed.rows || [];
@@ -589,7 +605,7 @@ export default function App() {
       {showUpload && (
         <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: 16, marginBottom: 20 }}>
           <p style={{ margin: "0 0 8px", fontSize: 13, color: "#475569" }}>
-            Upload <strong>1yr_clean_varnames.csv</strong> or any CSV with <strong>id</strong>, <strong>label_clean</strong>, <strong>detail</strong>, <strong>label_varname</strong>, <strong>detail_varname</strong>, <strong>both_varname</strong> columns.
+            Upload <strong>{activeSeries.file.replace("/", "")}</strong> or any CSV with <strong>id</strong>, <strong>label_clean</strong>, <strong>detail</strong>, <strong>label_varname</strong>, <strong>detail_varname</strong>, <strong>both_varname</strong> columns.
           </p>
           <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ fontSize: 13, marginBottom: 8, display: "block" }} />
           <textarea value={csvText} onChange={e => setCsvText(e.target.value)} placeholder="…or paste CSV text here"
@@ -608,6 +624,17 @@ export default function App() {
 
       {hasData && (
         <>
+      {/* Series tabs */}
+          <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 10, overflow: "hidden", border: "1.5px solid #cbd5e1", background: "white" }}>
+            {ACS_SERIES.map(s => (
+              <button key={s.key} onClick={() => setSeries(s.key)}
+                style={{ flex: 1, padding: "11px 0", fontSize: 14, fontWeight: 700, cursor: "pointer", border: "none", borderRight: s.key === "1yr" ? "1.5px solid #cbd5e1" : "none", background: series === s.key ? s.color : "white", color: series === s.key ? "white" : "#64748b", transition: "background 0.15s, color 0.15s" }}>
+                {s.label}
+                {series === s.key && <span style={{ marginLeft: 8, fontSize: 11, opacity: 0.85, fontWeight: 400 }}>({rows.length.toLocaleString()} vars)</span>}
+              </button>
+            ))}
+          </div>
+
           {/* Search */}
           <div style={{ position: "relative", marginBottom: 12 }}>
             <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94a3b8" }}>🔍</span>

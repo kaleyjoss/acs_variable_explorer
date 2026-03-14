@@ -3,7 +3,6 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 const GEOGRAPHIES = ["US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
 const STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
 const YEARS = Array.from({length: 21}, (_, i) => 2005 + i);
-
 const PINNED_TOPICS = [
   "ACS DEMOGRAPHIC AND HOUSING ESTIMATES",
   "SELECTED ECONOMIC CHARACTERISTICS",
@@ -11,6 +10,30 @@ const PINNED_TOPICS = [
   "SELECTED SOCIAL CHARACTERISTICS IN PUERTO RICO",
   "SELECTED SOCIAL CHARACTERISTICS IN THE UNITED STATES",
 ];
+const LABEL_FORMAT_OPTIONS = [
+  { value: "short",    label: "Short" },
+  { value: "with_id",  label: "With ID" },
+  { value: "full_acs", label: "Full ACS" },
+  { value: "with_table", label: "With Table" },
+];
+
+// ── Name suggestion ───────────────────────────────────────────────────────────
+function toCamelCase(str) {
+  return str.replace(/_+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
+}
+
+function suggestShortName(bothVarname, id) {
+  const isPercent = id && id.endsWith("P");
+  let s = bothVarname || "";
+  // Strip leading est_tot_ and common prefixes
+  s = s.replace(/^.*?__/, ""); // take detail part after __
+  s = s.replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
+  // Take first 3 meaningful tokens
+  const tokens = s.split("_").filter(t => t.length > 1 && !/^\d+$/.test(t)).slice(0, 3);
+  if (!tokens.length) return isPercent ? "percVar" : "estVar";
+  const base = toCamelCase(tokens.join("_"));
+  return isPercent ? "perc" + base.charAt(0).toUpperCase() + base.slice(1) : base;
+}
 
 // ── Label tree ────────────────────────────────────────────────────────────────
 function splitLabel(label) {
@@ -47,10 +70,7 @@ function getLabelChildren(tree, path) {
 }
 
 function collectAll(node, result) {
-  for (const key of Object.keys(node)) {
-    result.push(...node[key].__rows);
-    collectAll(node[key].__children, result);
-  }
+  for (const key of Object.keys(node)) { result.push(...node[key].__rows); collectAll(node[key].__children, result); }
 }
 
 function getAllRowsUnder(tree, path) {
@@ -136,8 +156,8 @@ function parseCSV(text) {
   const col = n => hdrs.findIndex(h => h === n);
   const idCol = col("id") !== -1 ? col("id") : col("variable");
   const labelCol = col("label_clean");
-  if (idCol === -1 || labelCol === -1) return { error: `Expected "id"/"variable" and "label_clean" columns. Found: ${hdrs.join(", ")}` };
-  const detailCol = col("detail"), labelVarCol = col("label_varname"), detailVarCol = col("detail_varname"), bothVarCol = col("both_varname");
+  if (idCol === -1 || labelCol === -1) return { error: "Expected id/variable and label_clean columns. Found: " + hdrs.join(", ") };
+  const detailCol = col("detail"), labelVarCol = col("label_varname"), detailVarCol = col("detail_varname"), bothVarCol = col("both_varname"), groupCol = col("group");
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
@@ -150,34 +170,70 @@ function parseCSV(text) {
       labelVar: labelVarCol !== -1 ? cols[labelVarCol] : null,
       detailVar: detailVarCol !== -1 ? cols[detailVarCol] : null,
       bothVar: bothVarCol !== -1 ? cols[bothVarCol] : null,
+      group: groupCol !== -1 ? cols[groupCol] : null,
     });
   }
   return { rows };
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
-function generateRScript(queryVars, geography, state, years, wide) {
+function buildVarLabel(v, labelFormat) {
+  const id = v.id;
+  const detail = v.row?.detail || "";
+  const detailParts = detail.split("!!").map(s => s.trim()).filter(Boolean);
+  // Build a human-readable description from detail path
+  const detailClean = detailParts.filter(p => !/^estimate$/i.test(p) && !/^total:?$/i.test(p)).join(" > ");
+  const isPercent = id.endsWith("P");
+  const prefix = isPercent ? "% " : "";
+  const baseLabel = prefix + (detailClean || v.displayName || id);
+  const group = v.row?.group || id.replace(/[_\d]+.*/, "");
+
+  if (labelFormat === "short") return baseLabel;
+  if (labelFormat === "with_id") return baseLabel + " [" + id + "]";
+  if (labelFormat === "full_acs") return baseLabel + " [" + id + ", ACS 1-yr Est]";
+  if (labelFormat === "with_table") return group + ": " + baseLabel + " [" + id + "]";
+  return baseLabel;
+}
+
+function generateRScript(queryVars, geography, state, years, wide, labelFormat) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
-  const safeName = n => (n || "variable").replace(/[^a-zA-Z0-9_]/g, "_");
-  const tableName = geography ? "by_" + safeName(geography) : "acs_data";
+  const tableName = geography ? "acs_1yr_by_" + geography.replace(/[^a-zA-Z0-9]/g, "_") + (wide ? "_wide" : "") : "acs_data";
   const multiYear = years.length > 1;
   const ind = multiYear ? "      " : "  ";
+
+  // Check for collisions — duplicates already flagged in UI, but still dedupe for safety
   const seen = new Set();
   const varLines = queryVars.map(v => {
-    let name = safeName(v.row?.bothVar || v.row?.labelVar || v.id);
+    let name = v.shortName || v.id;
     if (seen.has(name)) name = name + "_" + v.id.replace(/\W/g, "");
     seen.add(name);
     return ind + "  " + name + ' = "' + stripE(v.id) + '"';
   }).join(",\n");
-  const wideLine = wide ? ind + 'output = "wide",\n' : "";
+
   const geoLine   = geography ? ind + 'geography = "' + geography + '",\n' : "";
-  const stateLine = state     ? ind + 'state = "' + state + '",\n'         : "";
+  const stateLine = state     ? ind + 'state = "' + state + '",\n' : "";
+  const wideLine  = wide      ? ind + 'output = "wide",\n' : "";
+
+  let getAcsBlock;
   if (!multiYear) {
     const yearLine = years.length === 1 ? "  year = " + years[0] + "\n" : "";
-    return "library(tidyverse)\nlibrary(tidycensus)\n\n" + tableName + " <- get_acs(\n" + geoLine + stateLine + wideLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
+    getAcsBlock = tableName + " <- get_acs(\n" + geoLine + stateLine + wideLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
+  } else {
+    const yearsVec = "c(" + years.join(", ") + ")";
+    getAcsBlock = "years <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
   }
-  const yearsVec = "c(" + years.join(", ") + ")";
-  return "library(tidyverse)\nlibrary(tidycensus)\n\nyears <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
+
+  // var_label block
+  const labelLines = queryVars.map(v => {
+    const name = v.shortName || v.id;
+    const suffix = wide ? "E" : "E";
+    const labelStr = buildVarLabel(v, labelFormat);
+    return '  ' + name + suffix + ' = "' + labelStr.replace(/"/g, "'") + '"';
+  }).join(",\n");
+
+  const varLabelBlock = "var_label(" + tableName + ") <- list(\n" + labelLines + "\n)";
+
+  return "library(tidyverse)\nlibrary(tidycensus)\nlibrary(labelled)\n\n" + getAcsBlock + "\n\n" + varLabelBlock;
 }
 
 function clipboardCopy(text) {
@@ -218,20 +274,14 @@ function ChildList({ children, onSelect, headerLabel, getBestId, pinned = [] }) 
         const showDivider = isPinned && pinnedKeys.length > 0 && restKeys.length > 0 && i === pinnedKeys.length - 1;
         return (
           <div key={key}>
-            <div
-              onClick={() => onSelect(key)}
+            <div onClick={() => onSelect(key)}
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 16px", borderBottom: showDivider ? "none" : (i < keys.length - 1 ? "1px solid #f1f5f9" : "none"), cursor: "pointer", background: isPinned ? "#fafbff" : "white" }}
               onMouseEnter={e => { e.currentTarget.style.background = "#f8fafc"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = isPinned ? "#fafbff" : "white"; }}
-            >
+              onMouseLeave={e => { e.currentTarget.style.background = isPinned ? "#fafbff" : "white"; }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                {isPinned && (
-                  <span style={{ fontSize: 10, color: "#3b82f6", background: "#eff6ff", border: "1px solid #bfdbfe", padding: "1px 6px", borderRadius: 8, fontWeight: 700, letterSpacing: "0.04em", flexShrink: 0 }}>★</span>
-                )}
+                {isPinned && <span style={{ fontSize: 10, color: "#3b82f6", background: "#eff6ff", border: "1px solid #bfdbfe", padding: "1px 6px", borderRadius: 8, fontWeight: 700, flexShrink: 0 }}>★</span>}
                 <span style={{ fontSize: 14, color: "#334155", fontWeight: isPinned ? 600 : 500, textAlign: "left" }}>{key}</span>
-                {hasKids && (
-                  <span style={{ fontSize: 11, color: "#94a3b8", background: "#f1f5f9", padding: "2px 7px", borderRadius: 10 }}>has subcategories</span>
-                )}
+                {hasKids && <span style={{ fontSize: 11, color: "#94a3b8", background: "#f1f5f9", padding: "2px 7px", borderRadius: 10 }}>has subcategories</span>}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                 {bestId && <code style={{ background: "#eff6ff", color: "#1e40af", padding: "3px 8px", borderRadius: 5, fontSize: 12, fontWeight: 700 }}>{bestId}</code>}
@@ -259,24 +309,20 @@ function YearPicker({ years, onChange }) {
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <div onClick={() => setOpen(v => !v)} style={{ ...selStyle, display: "flex", alignItems: "center", gap: 6, minWidth: 160, maxWidth: 280, flexWrap: "wrap", cursor: "pointer", userSelect: "none" }}>
-        {years.length === 0
-          ? <span style={{ color: "#94a3b8" }}>Year(s)…</span>
+        {years.length === 0 ? <span style={{ color: "#94a3b8" }}>Year(s)…</span>
           : years.map(y => (
             <span key={y} style={{ background: "#1e3a5f", color: "white", borderRadius: 4, padding: "1px 7px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3 }}>
               {y}<span onMouseDown={e => { e.stopPropagation(); toggle(y); }} style={{ cursor: "pointer", opacity: .75 }}>×</span>
             </span>
           ))}
-        {years.length > 0 && (
-          <span onMouseDown={e => { e.stopPropagation(); onChange([]); }} style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8", cursor: "pointer" }}>✕</span>
-        )}
+        {years.length > 0 && <span onMouseDown={e => { e.stopPropagation(); onChange([]); }} style={{ marginLeft: "auto", fontSize: 12, color: "#94a3b8", cursor: "pointer" }}>✕</span>}
       </div>
       {open && (
         <div onMouseDown={e => e.stopPropagation()} style={{ position: "absolute", zIndex: 999, top: "calc(100% + 4px)", left: 0, background: "white", border: "1.5px solid #cbd5e1", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,.1)", maxHeight: 220, overflowY: "auto", minWidth: 130 }}>
           {YEARS.map(y => (
             <div key={y} onMouseDown={e => { e.stopPropagation(); e.preventDefault(); toggle(y); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", cursor: "pointer", fontSize: 13, color: "#334155", background: years.includes(y) ? "#eff6ff" : "white", userSelect: "none" }}>
-              <input type="checkbox" readOnly checked={years.includes(y)} style={{ accentColor: "#1e3a5f", pointerEvents: "none" }} />
-              {y}
+              <input type="checkbox" readOnly checked={years.includes(y)} style={{ accentColor: "#1e3a5f", pointerEvents: "none" }} />{y}
             </div>
           ))}
         </div>
@@ -285,17 +331,73 @@ function YearPicker({ years, onChange }) {
   );
 }
 
+// ── Editable name chip ────────────────────────────────────────────────────────
+function VarChip({ v, onRemove, onRename, isDuplicate }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(v.shortName);
+  const inputRef = useRef(null);
+  const isPercent = v.id.endsWith("P");
+
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+
+  const commit = () => {
+    const cleaned = draft.trim().replace(/[^a-zA-Z0-9_]/g, "") || v.shortName;
+    setDraft(cleaned);
+    onRename(cleaned);
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 0, background: isDuplicate ? "#fff1f1" : "#eff6ff", border: "1px solid " + (isDuplicate ? "#fca5a5" : "#bfdbfe"), borderRadius: 8, padding: "5px 8px", fontSize: 12, maxWidth: 420 }}>
+      {/* Type badge */}
+      {isPercent
+        ? <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 4, padding: "0 5px", fontSize: 11, fontWeight: 700, marginRight: 6, flexShrink: 0 }}>%</span>
+        : <span style={{ background: "#fefce8", color: "#92400e", border: "1px solid #fde68a", borderRadius: 4, padding: "0 5px", fontSize: 11, fontWeight: 700, marginRight: 6, flexShrink: 0 }}>est</span>}
+
+      {/* Editable name */}
+      {editing ? (
+        <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
+          onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(v.shortName); setEditing(false); } }}
+          style={{ fontSize: 12, fontWeight: 700, color: "#1e40af", fontFamily: "monospace", border: "none", borderBottom: "2px solid #3b82f6", outline: "none", background: "transparent", width: Math.max(60, draft.length * 8) + "px", padding: 0 }} />
+      ) : (
+        <span onClick={() => setEditing(true)} title="Click to rename"
+          style={{ fontWeight: 700, color: isDuplicate ? "#dc2626" : "#1e40af", fontFamily: "monospace", cursor: "text", borderBottom: "1.5px dashed #93c5fd", marginRight: 4 }}>
+          {v.shortName}
+        </span>
+      )}
+
+      <span style={{ cursor: "pointer", color: "#94a3b8", fontSize: 13, marginLeft: 2 }} onClick={() => setEditing(true)} title="Rename">✏️</span>
+
+      <span style={{ color: "#94a3b8", margin: "0 6px" }}>·</span>
+      <code style={{ color: "#64748b", fontSize: 11 }}>{v.id}</code>
+      <span style={{ color: "#94a3b8", margin: "0 6px" }}>—</span>
+      <span style={{ color: "#475569", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.displayName}</span>
+      {isDuplicate && <span style={{ color: "#dc2626", fontSize: 11, marginLeft: 6, flexShrink: 0 }}>⚠ duplicate name</span>}
+
+      <span onClick={onRemove} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 15, lineHeight: 1, marginLeft: 8, flexShrink: 0 }}>×</span>
+    </div>
+  );
+}
+
 // ── Query basket ──────────────────────────────────────────────────────────────
-function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years, wide }) {
+function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selState, years, wide }) {
   const [rScript, setRScript] = useState("");
   const [rCopied, setRCopied] = useState(false);
   const [genError, setGenError] = useState("");
+  const [labelFormat, setLabelFormat] = useState("with_id");
+
+  const duplicateNames = useMemo(() => {
+    const counts = {};
+    queryVars.forEach(v => { counts[v.shortName] = (counts[v.shortName] || 0) + 1; });
+    return new Set(Object.keys(counts).filter(k => counts[k] > 1));
+  }, [queryVars]);
 
   const tryGenerate = useCallback(() => {
     if (!geography || years.length === 0 || queryVars.length === 0) return;
+    if (duplicateNames.size > 0) { setGenError("Fix duplicate variable names before generating."); return; }
     setGenError("");
-    setRScript(generateRScript(queryVars, geography, selState, years, wide));
-  }, [queryVars, geography, selState, years]);
+    setRScript(generateRScript(queryVars, geography, selState, years, wide, labelFormat));
+  }, [queryVars, geography, selState, years, wide, labelFormat, duplicateNames]);
 
   useEffect(() => { tryGenerate(); }, [tryGenerate]);
 
@@ -304,6 +406,7 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years,
     if (!geography) missing.push("Geography");
     if (years.length === 0) missing.push("Year(s)");
     if (missing.length) { setGenError("Please select: " + missing.join(" and ")); return; }
+    if (duplicateNames.size > 0) { setGenError("Fix duplicate variable names before generating."); return; }
     tryGenerate();
   };
 
@@ -313,11 +416,20 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years,
 
   return (
     <div style={{ background: "white", border: "2px solid #1e3a5f", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+      {/* Header row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Query · {queryVars.length} variable{queryVars.length !== 1 ? "s" : ""}
+          {duplicateNames.size > 0 && <span style={{ color: "#dc2626", marginLeft: 8, fontSize: 12, textTransform: "none", fontWeight: 600 }}>⚠ {duplicateNames.size} duplicate name{duplicateNames.size > 1 ? "s" : ""}</span>}
         </span>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Label format selector */}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>var_label format:</span>
+            <select value={labelFormat} onChange={e => setLabelFormat(e.target.value)} style={{ ...selStyle, fontSize: 12, padding: "4px 8px" }}>
+              {LABEL_FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
           <button onClick={handleGenerate} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
             Create R Script
           </button>
@@ -326,28 +438,30 @@ function QueryBasket({ queryVars, onRemove, onClear, geography, selState, years,
           </button>
         </div>
       </div>
+
+      {/* Variable chips */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: genError || rScript ? 12 : 0 }}>
         {queryVars.map(v => (
-          <div key={v.uid} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, padding: "4px 10px", fontSize: 12 }}>
-            <code style={{ color: "#1e40af", fontWeight: 700 }}>{v.id}</code>
-            <span style={{ color: "#64748b" }}>—</span>
-            <span style={{ color: "#475569", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.displayName}</span>
-            <span onClick={() => onRemove(v.uid)} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 15, lineHeight: 1, marginLeft: 2 }}>×</span>
-          </div>
+          <VarChip key={v.uid} v={v}
+            onRemove={() => onRemove(v.uid)}
+            onRename={name => onRename(v.uid, name)}
+            isDuplicate={duplicateNames.has(v.shortName)} />
         ))}
       </div>
+
       {genError && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#dc2626" }}>{genError}</p>}
+
       {rScript && (
         <div style={{ background: "#1e1e2e", borderRadius: 10, padding: 14 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              R Script — tidycensus{years.length > 1 ? " (map_dfr · " + years.length + " yrs)" : ""}
+              R Script — tidycensus + labelled{years.length > 1 ? " (map_dfr · " + years.length + " yrs)" : ""}
             </span>
             <button onClick={handleCopy} style={{ background: rCopied ? "#10b981" : "#7c3aed", color: "white", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
               {rCopied ? "✓ Copied!" : "Copy"}
             </button>
           </div>
-          <pre style={{ margin: 0, fontSize: 12.5, color: "#e2e8f0", fontFamily: "monospace", whiteSpace: "pre-wrap", lineHeight: 1.6, textAlign: "left" }}>{rScript}</pre>
+          <pre style={{ margin: 0, fontSize: 12, color: "#e2e8f0", fontFamily: "monospace", whiteSpace: "pre-wrap", lineHeight: 1.65, textAlign: "left" }}>{rScript}</pre>
         </div>
       )}
     </div>
@@ -414,9 +528,20 @@ export default function App() {
   const handleAddToQuery = () => {
     if (!currentId || alreadyInQuery) return;
     const displayName = [...labelPath, ...detailPath].join(" › ");
-    setQueryVars(prev => [...prev, { uid: currentId + "-" + Date.now(), id: currentId, displayName, row: currentRow }]);
+    const suggested = suggestShortName(currentRow?.bothVar || "", currentId);
+    setQueryVars(prev => [...prev, {
+      uid: currentId + "-" + Date.now(),
+      id: currentId,
+      shortName: suggested,
+      displayName,
+      row: currentRow,
+    }]);
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
+  };
+
+  const handleRename = (uid, newName) => {
+    setQueryVars(prev => prev.map(v => v.uid === uid ? { ...v, shortName: newName } : v));
   };
 
   const handleFile = e => {
@@ -427,6 +552,7 @@ export default function App() {
   };
 
   const hasData = rows.length > 0;
+  const isPercent = currentId && currentId.endsWith("P");
 
   return (
     <div style={{ fontFamily: "system-ui, sans-serif", maxWidth: 860, margin: "0 auto", padding: 24, background: "#f8fafc", minHeight: "100vh" }}>
@@ -463,7 +589,7 @@ export default function App() {
       {showUpload && (
         <div style={{ background: "white", border: "1.5px solid #cbd5e1", borderRadius: 10, padding: 16, marginBottom: 20 }}>
           <p style={{ margin: "0 0 8px", fontSize: 13, color: "#475569" }}>
-            Upload <strong>1yr_clean_varnames.csv</strong> or any CSV with <strong>id</strong>, <strong>label_clean</strong>, <strong>detail</strong>, <strong>label_varname</strong>, <strong>detail_varname</strong> columns.
+            Upload <strong>1yr_clean_varnames.csv</strong> or any CSV with <strong>id</strong>, <strong>label_clean</strong>, <strong>detail</strong>, <strong>label_varname</strong>, <strong>detail_varname</strong>, <strong>both_varname</strong> columns.
           </p>
           <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ fontSize: 13, marginBottom: 8, display: "block" }} />
           <textarea value={csvText} onChange={e => setCsvText(e.target.value)} placeholder="…or paste CSV text here"
@@ -477,7 +603,7 @@ export default function App() {
       )}
 
       {loading && <p style={{ color: "#64748b", fontSize: 14 }}>Loading variables…</p>}
-      {fetchError && <p style={{ color: "#dc2626", fontSize: 13 }}>Could not auto-load CSV ({fetchError}) — upload it manually above.</p>}
+      {fetchError && <p style={{ color: "#dc2626", fontSize: 13 }}>Could not auto-load CSV ({fetchError}) — upload manually above.</p>}
       {!hasData && !loading && !showUpload && <p style={{ color: "#dc2626", fontSize: 14 }}>No data loaded. Click "Upload CSV" above.</p>}
 
       {hasData && (
@@ -488,9 +614,7 @@ export default function App() {
             <input placeholder="Search topics…" value={search}
               onChange={e => { setSearch(e.target.value); if (e.target.value) goToLabel([], false); }}
               style={{ width: "100%", boxSizing: "border-box", padding: "11px 12px 11px 38px", fontSize: 14, border: "1.5px solid #cbd5e1", borderRadius: 10, outline: "none", background: "white" }} />
-            {search && (
-              <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#94a3b8" }}>×</button>
-            )}
+            {search && <button onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 20, color: "#94a3b8" }}>×</button>}
           </div>
 
           {/* ACS Params */}
@@ -509,11 +633,7 @@ export default function App() {
               <input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} style={{ accentColor: "#1e3a5f", width: 14, height: 14 }} />
               Wide
             </label>
-            {years.length > 1 && (
-              <span style={{ fontSize: 12, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 6, padding: "3px 9px", fontWeight: 600 }}>
-                map_dfr · {years.length} yrs
-              </span>
-            )}
+            {years.length > 1 && <span style={{ fontSize: 12, color: "#7c3aed", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 6, padding: "3px 9px", fontWeight: 600 }}>map_dfr · {years.length} yrs</span>}
           </div>
 
           {/* Query basket */}
@@ -521,6 +641,7 @@ export default function App() {
             queryVars={queryVars}
             onRemove={uid => setQueryVars(prev => prev.filter(v => v.uid !== uid))}
             onClear={() => setQueryVars([])}
+            onRename={handleRename}
             geography={geography}
             selState={selState}
             years={years}
@@ -550,9 +671,7 @@ export default function App() {
                     </div>
                   );
                 })}
-              {filteredLabels.length > 50 && (
-                <p style={{ padding: "8px 16px", margin: 0, fontSize: 12, color: "#94a3b8", background: "#f8fafc" }}>Showing first 50 — narrow your search</p>
-              )}
+              {filteredLabels.length > 50 && <p style={{ padding: "8px 16px", margin: 0, fontSize: 12, color: "#94a3b8", background: "#f8fafc" }}>Showing first 50 — narrow your search</p>}
             </div>
           )}
 
@@ -575,10 +694,15 @@ export default function App() {
                 <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 10, padding: "14px 18px", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
                     <div>
-                      <p style={{ margin: 0, fontSize: 11, color: "#3b82f6", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                        {detailPath.length === 0 ? "Most General Variable" : "Current Variable"}
-                      </p>
-                      <p style={{ margin: "4px 0 0", fontSize: 26, fontWeight: 700, color: "#1e40af", fontFamily: "monospace" }}>{currentId}</p>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <p style={{ margin: 0, fontSize: 11, color: "#3b82f6", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                          {detailPath.length === 0 ? "Most General Variable" : "Current Variable"}
+                        </p>
+                        {isPercent
+                          ? <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>% Percent</span>
+                          : <span style={{ background: "#fefce8", color: "#92400e", border: "1px solid #fde68a", borderRadius: 4, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>Estimate</span>}
+                      </div>
+                      <p style={{ margin: 0, fontSize: 26, fontWeight: 700, color: "#1e40af", fontFamily: "monospace" }}>{currentId}</p>
                       <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>
                         {labelPath.join(" › ")}{detailPath.length > 0 ? " · " + detailPath.join(" › ") : ""}
                       </p>

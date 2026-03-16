@@ -2,11 +2,11 @@
 
 Webapp ACS variable explorer which can also render an API call for selected variables using tidycensus in R. 
 
-In order to generate the variable names from the ACS label + 'detail', I copied all the variables for 1 year ACS variables into a csv. Then I generated label_varname and detail_varname, using scripting to modify the ACS labels (can be found and modified within creating_variable_namecases.ipynb). Those two labels are then combined to create the variable both_varname: {label_varname}__{detail_varname}. 
+In order to generate the variable names from the ACS label + 'detail', I copied all the variables for 1 year ACS variables and 5 year into a csv. Then I generated label_varname and detail_varname, using scripting to modify the ACS labels (can be found and modified within creating_variable_namecases.ipynb). Those two labels are then combined to create the variable both_varname: {label_varname}__{detail_varname}. 
 
-Currently the R scripting code assigns both_varname to the variable to retain all identifying information about variables query'd from across different tables.
+Currently the R or STATA scripting code assigns a new short varname to the variable, and then a longer variable label to retain all identifying information about variables queried from across different tables. You can add more detail to the variable label by selecting different levels in the "label" dropdown. 
 
-The variable parsing and csv is available in /public. The UI for this webpage was written by Claude, developed in implementation steps demonstrated the commits of this repository.  
+The variable parsing and csv is available in /public. The UI for this webpage was written by Claude Code, developed in implementation steps demonstrated the commits of this repository. The prompts are similar to what is in the commit messages. 
 
 ## Data Dictionary and Sources
 - Explanation of each variable: [2024 ACS Variable Descriptions](/public/2024_ACSSubjectDefinitions.pdf) 
@@ -25,8 +25,7 @@ The variable parsing and csv is available in /public. The UI for this webpage wa
     - Margin of error over time
     - If it's in 5y, 1y or both
 - Add wide format option (will have to work around issues with too-long variable names...)
-- Add 5year variables
-- Add STATA, python, direct-API script rendering options
+- Add python, direct-API script rendering options
 
 ***UI written with Claude code***
 

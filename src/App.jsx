@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 const GEOGRAPHIES = ["US","region","state","county","county subdivision","tract","block group","block","place","american indian area/alaska native area (reservation or statistical entity only)","american indian area (off-reservation trust land only)/hawaiian home land","cbsa","combined statistical area","new england city and town area","urban area","congressional district","school district (elementary)","school district (secondary)","school district (unified)","public use microdata area","zip code tabulation area","state legislative district (upper chamber)","state legislative district (lower chamber)","voting district"];
 const STATES = ["Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut","Delaware","Florida","Georgia","Hawaii","Idaho","Illinois","Indiana","Iowa","Kansas","Kentucky","Louisiana","Maine","Maryland","Massachusetts","Michigan","Minnesota","Mississippi","Missouri","Montana","Nebraska","Nevada","New Hampshire","New Jersey","New Mexico","New York","North Carolina","North Dakota","Ohio","Oklahoma","Oregon","Pennsylvania","Rhode Island","South Carolina","South Dakota","Tennessee","Texas","Utah","Vermont","Virginia","Washington","West Virginia","Wisconsin","Wyoming","District of Columbia","Puerto Rico"];
 const YEARS = Array.from({length: 21}, (_, i) => 2005 + i);
+
 const ACS_SERIES = [
   { key: "1yr", label: "1-Year ACS Estimates", file: "/1yr_clean_varnames.csv", color: "#1e3a5f" },
   { key: "5yr", label: "5-Year ACS Estimates", file: "/5yr_clean_varnames.csv", color: "#5b21b6" },
@@ -15,12 +16,26 @@ const PINNED_TOPICS = [
   "SELECTED SOCIAL CHARACTERISTICS IN PUERTO RICO",
   "SELECTED SOCIAL CHARACTERISTICS IN THE UNITED STATES",
 ];
+
 const LABEL_FORMAT_OPTIONS = [
-  { value: "short",    label: "Short" },
-  { value: "with_id",  label: "With ID" },
-  { value: "full_acs", label: "Full ACS" },
-  { value: "with_table", label: "With Table" },
+  { value: "short",     label: "Short" },
+  { value: "with_id",   label: "With ID" },
+  { value: "full_acs",  label: "Full ACS" },
+  { value: "with_table",label: "With Table" },
 ];
+
+const GEO_STATA = {
+  "US": "us", "state": "state", "county": "county",
+  "tract": "tract", "block group": "blockgroup", "block": "block",
+  "place": "place", "cbsa": "cbsa", "combined statistical area": "csa",
+  "congressional district": "cd", "zip code tabulation area": "zcta",
+  "public use microdata area": "puma",
+  "state legislative district (upper chamber)": "sldu",
+  "state legislative district (lower chamber)": "sldl",
+  "school district (unified)": "sdu",
+  "school district (elementary)": "sde",
+  "school district (secondary)": "sds",
+};
 
 // ── Name suggestion ───────────────────────────────────────────────────────────
 function toCamelCase(str) {
@@ -30,10 +45,8 @@ function toCamelCase(str) {
 function suggestShortName(bothVarname, id) {
   const isPercent = id && id.endsWith("P");
   let s = bothVarname || "";
-  // Strip leading est_tot_ and common prefixes
-  s = s.replace(/^.*?__/, ""); // take detail part after __
+  s = s.replace(/^.*?__/, "");
   s = s.replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
-  // Take first 3 meaningful tokens
   const tokens = s.split("_").filter(t => t.length > 1 && !/^\d+$/.test(t)).slice(0, 3);
   if (!tokens.length) return isPercent ? "percVar" : "estVar";
   const base = toCamelCase(tokens.join("_"));
@@ -181,32 +194,29 @@ function parseCSV(text) {
   return { rows };
 }
 
-// ── R script ──────────────────────────────────────────────────────────────────
+// ── Label string ──────────────────────────────────────────────────────────────
 function buildVarLabel(v, labelFormat) {
   const id = v.id;
   const detail = v.row?.detail || "";
   const detailParts = detail.split("!!").map(s => s.trim()).filter(Boolean);
-  // Build a human-readable description from detail path
   const detailClean = detailParts.filter(p => !/^estimate$/i.test(p) && !/^total:?$/i.test(p)).join(" > ");
   const isPercent = id.endsWith("P");
   const prefix = isPercent ? "% " : "";
   const baseLabel = prefix + (detailClean || v.displayName || id);
   const group = v.row?.group || id.replace(/[_\d]+.*/, "");
-
-  if (labelFormat === "short") return baseLabel;
-  if (labelFormat === "with_id") return baseLabel + " [" + id + "]";
-  if (labelFormat === "full_acs") return baseLabel + " [" + id + ", ACS 1-yr Est]";
+  if (labelFormat === "short")      return baseLabel;
+  if (labelFormat === "with_id")    return baseLabel + " [" + id + "]";
+  if (labelFormat === "full_acs")   return baseLabel + " [" + id + ", ACS 1-yr Est]";
   if (labelFormat === "with_table") return group + ": " + baseLabel + " [" + id + "]";
   return baseLabel;
 }
 
+// ── R script ──────────────────────────────────────────────────────────────────
 function generateRScript(queryVars, geography, state, years, wide, labelFormat) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
   const tableName = geography ? "acs_1yr_by_" + geography.replace(/[^a-zA-Z0-9]/g, "_") + (wide ? "_wide" : "") : "acs_data";
   const multiYear = years.length > 1;
   const ind = multiYear ? "      " : "  ";
-
-  // Check for collisions — duplicates already flagged in UI, but still dedupe for safety
   const seen = new Set();
   const varLines = queryVars.map(v => {
     let name = v.shortName || v.id;
@@ -214,11 +224,9 @@ function generateRScript(queryVars, geography, state, years, wide, labelFormat) 
     seen.add(name);
     return ind + "  " + name + ' = "' + stripE(v.id) + '"';
   }).join(",\n");
-
   const geoLine   = geography ? ind + 'geography = "' + geography + '",\n' : "";
   const stateLine = state     ? ind + 'state = "' + state + '",\n' : "";
   const wideLine  = wide      ? ind + 'output = "wide",\n' : "";
-
   let getAcsBlock;
   if (!multiYear) {
     const yearLine = years.length === 1 ? "  year = " + years[0] + "\n" : "";
@@ -227,20 +235,77 @@ function generateRScript(queryVars, geography, state, years, wide, labelFormat) 
     const yearsVec = "c(" + years.join(", ") + ")";
     getAcsBlock = "years <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
   }
-
-  // var_label block
   const labelLines = queryVars.map(v => {
     const name = v.shortName || v.id;
-    const suffix = wide ? "E" : "E";
-    const labelStr = buildVarLabel(v, labelFormat);
-    return '  ' + name + suffix + ' = "' + labelStr.replace(/"/g, "'") + '"';
+    const labelStr = buildVarLabel(v, labelFormat).replace(/"/g, "'");
+    return '  ' + name + 'E = "' + labelStr + '"';
   }).join(",\n");
-
   const varLabelBlock = "var_label(" + tableName + ") <- list(\n" + labelLines + "\n)";
-
   return "library(tidyverse)\nlibrary(tidycensus)\nlibrary(labelled)\n\n" + getAcsBlock + "\n\n" + varLabelBlock;
 }
 
+// ── Stata script ──────────────────────────────────────────────────────────────
+function detectProduct(id) {
+  const u = id.toUpperCase();
+  if (u.startsWith("DP")) return "profile";
+  if (u.startsWith("S"))  return "subject";
+  if (u.startsWith("CP")) return "cprofile";
+  return "";
+}
+
+function generateStataScript(queryVars, geography, state, years, labelFormat, series) {
+  const sample = series === "5yr" ? 5 : 1;
+  const seriesLabel = series === "5yr" ? "5-Year" : "1-Year";
+  const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
+  const stataId = id => stripE(id).toLowerCase();
+  // getcensus returns estimate cols as <id>e (percent vars: ends in p, so returned as <id>pe → e appended)
+  const returnedName = id => stataId(id) + "e";
+  const geoStr = GEO_STATA[geography] || geography || "us";
+  const varIds = queryVars.map(v => stataId(v.id)).join(" ");
+  const products = [...new Set(queryVars.map(v => detectProduct(v.id)).filter(Boolean))];
+  const product = products[0] || "";
+  const mixedWarning = products.length > 1
+    ? "* WARNING: Mixed variable products (" + products.join(", ") + "). Split into separate getcensus calls.\n"
+    : "";
+  const multiYear = years.length > 1;
+  const yearsLine = multiYear ? "local years " + years.join(" ") + "\n" : "";
+  // Build year option — avoid backtick/template-literal collision by building string parts separately
+  let yearOpt = "";
+  if (multiYear) {
+    yearOpt = "year(" + "`" + "years" + "'" + ")";
+  } else if (years.length === 1) {
+    yearOpt = "year(" + years[0] + ")";
+  }
+  const opts = [];
+  if (product)   opts.push("product(" + product + ")");
+  opts.push("sample(" + sample + ")");
+  if (yearOpt)   opts.push(yearOpt);
+  opts.push("geo(" + geoStr + ")");
+  if (state)     opts.push("statefips(" + state + ")");
+  opts.push('key("' + "`" + "apikey" + "'" + '")');
+  const optLines = opts.map((o, i) => "    " + o + (i < opts.length - 1 ? " ///" : "")).join("\n");
+  const renameLines = queryVars.map(v => "rename " + returnedName(v.id) + " " + (v.shortName || v.id)).join("\n");
+  const labelLines = queryVars.map(v => {
+    const name = v.shortName || v.id;
+    const labelStr = buildVarLabel(v, labelFormat).replace(/"/g, "'");
+    return 'label variable ' + name + ' "' + labelStr + '"';
+  }).join("\n");
+  return (
+    "* ACS " + seriesLabel + " Estimates — " + (geography || "geography not set") + "\n" +
+    "* Generated by ACS Variable Explorer\n\n" +
+    'local apikey "<your_api_key>"\n' +
+    yearsLine + "\n" +
+    mixedWarning +
+    "getcensus " + varIds + " ///\n" +
+    optLines + "\n\n" +
+    "* Rename to short names\n" +
+    renameLines + "\n\n" +
+    "* Label variables\n" +
+    labelLines
+  );
+}
+
+// ── Clipboard ─────────────────────────────────────────────────────────────────
 function clipboardCopy(text) {
   try {
     const ta = document.createElement("textarea");
@@ -336,30 +401,22 @@ function YearPicker({ years, onChange }) {
   );
 }
 
-// ── Editable name chip ────────────────────────────────────────────────────────
+// ── Var chip ──────────────────────────────────────────────────────────────────
 function VarChip({ v, onRemove, onRename, isDuplicate }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(v.shortName);
   const inputRef = useRef(null);
   const isPercent = v.id.endsWith("P");
-
   useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
-
   const commit = () => {
     const cleaned = draft.trim().replace(/[^a-zA-Z0-9_]/g, "") || v.shortName;
-    setDraft(cleaned);
-    onRename(cleaned);
-    setEditing(false);
+    setDraft(cleaned); onRename(cleaned); setEditing(false);
   };
-
   return (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 0, background: isDuplicate ? "#fff1f1" : "#eff6ff", border: "1px solid " + (isDuplicate ? "#fca5a5" : "#bfdbfe"), borderRadius: 8, padding: "5px 8px", fontSize: 12, maxWidth: 420 }}>
-      {/* Type badge */}
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 0, background: isDuplicate ? "#fff1f1" : "#eff6ff", border: "1px solid " + (isDuplicate ? "#fca5a5" : "#bfdbfe"), borderRadius: 8, padding: "5px 8px", fontSize: 12, maxWidth: 460 }}>
       {isPercent
         ? <span style={{ background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", borderRadius: 4, padding: "0 5px", fontSize: 11, fontWeight: 700, marginRight: 6, flexShrink: 0 }}>%</span>
         : <span style={{ background: "#fefce8", color: "#92400e", border: "1px solid #fde68a", borderRadius: 4, padding: "0 5px", fontSize: 11, fontWeight: 700, marginRight: 6, flexShrink: 0 }}>est</span>}
-
-      {/* Editable name */}
       {editing ? (
         <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(v.shortName); setEditing(false); } }}
@@ -370,25 +427,25 @@ function VarChip({ v, onRemove, onRename, isDuplicate }) {
           {v.shortName}
         </span>
       )}
-
-      <span style={{ cursor: "pointer", color: "#94a3b8", fontSize: 13, marginLeft: 2 }} onClick={() => setEditing(true)} title="Rename">✏️</span>
-
+      <span style={{ cursor: "pointer", color: "#94a3b8", fontSize: 13, marginLeft: 2 }} onClick={() => setEditing(true)}>✏️</span>
       <span style={{ color: "#94a3b8", margin: "0 6px" }}>·</span>
       <code style={{ color: "#64748b", fontSize: 11 }}>{v.id}</code>
       <span style={{ color: "#94a3b8", margin: "0 6px" }}>—</span>
       <span style={{ color: "#475569", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v.displayName}</span>
-      {isDuplicate && <span style={{ color: "#dc2626", fontSize: 11, marginLeft: 6, flexShrink: 0 }}>⚠ duplicate name</span>}
-
+      {isDuplicate && <span style={{ color: "#dc2626", fontSize: 11, marginLeft: 6, flexShrink: 0 }}>⚠ duplicate</span>}
       <span onClick={onRemove} style={{ cursor: "pointer", color: "#94a3b8", fontSize: 15, lineHeight: 1, marginLeft: 8, flexShrink: 0 }}>×</span>
     </div>
   );
 }
 
 // ── Query basket ──────────────────────────────────────────────────────────────
-function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selState, years, wide }) {
-  const [rScript, setRScript] = useState("");
-  const [rCopied, setRCopied] = useState(false);
-  const [genError, setGenError] = useState("");
+function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selState, years, wide, series }) {
+  const [rScript, setRScript]         = useState("");
+  const [stataScript, setStataScript] = useState("");
+  const [scriptType, setScriptType]   = useState("r");
+  const [rCopied, setRCopied]         = useState(false);
+  const [stataCopied, setStataCopied] = useState(false);
+  const [genError, setGenError]       = useState("");
   const [labelFormat, setLabelFormat] = useState("with_id");
 
   const duplicateNames = useMemo(() => {
@@ -402,7 +459,8 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
     if (duplicateNames.size > 0) { setGenError("Fix duplicate variable names before generating."); return; }
     setGenError("");
     setRScript(generateRScript(queryVars, geography, selState, years, wide, labelFormat));
-  }, [queryVars, geography, selState, years, wide, labelFormat, duplicateNames]);
+    setStataScript(generateStataScript(queryVars, geography, selState, years, labelFormat, series));
+  }, [queryVars, geography, selState, years, wide, labelFormat, duplicateNames, series]);
 
   useEffect(() => { tryGenerate(); }, [tryGenerate]);
 
@@ -415,28 +473,32 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
     tryGenerate();
   };
 
-  const handleCopy = () => { clipboardCopy(rScript); setRCopied(true); setTimeout(() => setRCopied(false), 1500); };
+  const activeScript = scriptType === "r" ? rScript : stataScript;
+  const handleCopy = () => {
+    clipboardCopy(activeScript);
+    if (scriptType === "r") { setRCopied(true); setTimeout(() => setRCopied(false), 1500); }
+    else { setStataCopied(true); setTimeout(() => setStataCopied(false), 1500); }
+  };
+  const isCopied = scriptType === "r" ? rCopied : stataCopied;
 
   if (queryVars.length === 0) return null;
 
   return (
     <div style={{ background: "white", border: "2px solid #1e3a5f", borderRadius: 12, padding: 16, marginBottom: 20 }}>
-      {/* Header row */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           Query · {queryVars.length} variable{queryVars.length !== 1 ? "s" : ""}
           {duplicateNames.size > 0 && <span style={{ color: "#dc2626", marginLeft: 8, fontSize: 12, textTransform: "none", fontWeight: 600 }}>⚠ {duplicateNames.size} duplicate name{duplicateNames.size > 1 ? "s" : ""}</span>}
         </span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* Label format selector */}
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>var_label format:</span>
+            <span style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Label format:</span>
             <select value={labelFormat} onChange={e => setLabelFormat(e.target.value)} style={{ ...selStyle, fontSize: 12, padding: "4px 8px" }}>
               {LABEL_FORMAT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <button onClick={handleGenerate} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 7, padding: "7px 16px", cursor: "pointer", fontWeight: 700, fontSize: 13 }}>
-            Create R Script
+            Generate Scripts
           </button>
           <button onClick={onClear} style={{ background: "white", color: "#dc2626", border: "1.5px solid #fca5a5", borderRadius: 7, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             Clear all
@@ -444,8 +506,7 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
         </div>
       </div>
 
-      {/* Variable chips */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: genError || rScript ? 12 : 0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: genError || activeScript ? 12 : 0 }}>
         {queryVars.map(v => (
           <VarChip key={v.uid} v={v}
             onRemove={() => onRemove(v.uid)}
@@ -456,17 +517,23 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
 
       {genError && <p style={{ margin: "0 0 10px", fontSize: 12, color: "#dc2626" }}>{genError}</p>}
 
-      {rScript && (
-        <div style={{ background: "#1e1e2e", borderRadius: 10, padding: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, color: "#a78bfa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              R Script — tidycensus + labelled{years.length > 1 ? " (map_dfr · " + years.length + " yrs)" : ""}
-            </span>
-            <button onClick={handleCopy} style={{ background: rCopied ? "#10b981" : "#7c3aed", color: "white", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
-              {rCopied ? "✓ Copied!" : "Copy"}
+      {(rScript || stataScript) && (
+        <div style={{ background: "#1e1e2e", borderRadius: 10, overflow: "hidden" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid #2d2d44" }}>
+            {[{ key: "r", label: "R  ·  tidycensus" }, { key: "stata", label: "Stata  ·  getcensus" }].map(tab => (
+              <button key={tab.key} onClick={() => setScriptType(tab.key)}
+                style={{ padding: "9px 18px", fontSize: 12, fontWeight: 700, cursor: "pointer", border: "none", borderBottom: scriptType === tab.key ? "2px solid #a78bfa" : "2px solid transparent", background: "transparent", color: scriptType === tab.key ? "#a78bfa" : "#64748b", letterSpacing: "0.04em" }}>
+                {tab.label}
+              </button>
+            ))}
+            <div style={{ flex: 1 }} />
+            <button onClick={handleCopy} style={{ margin: "6px 10px", background: isCopied ? "#10b981" : "#7c3aed", color: "white", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontWeight: 700, fontSize: 12 }}>
+              {isCopied ? "✓ Copied!" : "Copy"}
             </button>
           </div>
-          <pre style={{ margin: 0, fontSize: 12, color: "#e2e8f0", fontFamily: "monospace", whiteSpace: "pre-wrap", lineHeight: 1.65, textAlign: "left" }}>{rScript}</pre>
+          <pre style={{ margin: 0, padding: 14, fontSize: 12, color: "#e2e8f0", fontFamily: "monospace", whiteSpace: "pre-wrap", lineHeight: 1.65, textAlign: "left" }}>
+            {activeScript}
+          </pre>
         </div>
       )}
     </div>
@@ -581,7 +648,7 @@ export default function App() {
             {hasData ? rows.length.toLocaleString() + " variables · " + uniqueLabels.length + " topics" : "Upload your CSV to get started"}
           </p>
           <p style={{ margin: "8px 0 0", fontSize: 13, color: "#475569", maxWidth: 560, lineHeight: 1.6 }}>
-            Browse and search ACS variables by topic, drill into subcategories and breakdowns, then build a multi-variable query and export a ready-to-run <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>tidycensus</code> R script — with optional multi-year <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>map_dfr</code> looping.
+            Browse and search ACS variables by topic, drill into subcategories and breakdowns, then build a multi-variable query and export a ready-to-run <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>tidycensus</code> R script or <code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: 4 }}>getcensus</code> Stata script.
           </p>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
@@ -624,7 +691,7 @@ export default function App() {
 
       {hasData && (
         <>
-      {/* Series tabs */}
+          {/* Series tabs */}
           <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 10, overflow: "hidden", border: "1.5px solid #cbd5e1", background: "white" }}>
             {ACS_SERIES.map(s => (
               <button key={s.key} onClick={() => setSeries(s.key)}
@@ -673,6 +740,7 @@ export default function App() {
             selState={selState}
             years={years}
             wide={wide}
+            series={series}
           />
 
           {/* Search results */}

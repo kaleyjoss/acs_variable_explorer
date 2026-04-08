@@ -195,7 +195,8 @@ function parseCSV(text) {
 }
 
 // ── Label string ──────────────────────────────────────────────────────────────
-function buildVarLabel(v, labelFormat) {
+function buildVarLabel(v, labelFormat, series) {
+  const seriesLabel = series === "5yr" ? "ACS 5-yr Est" : "ACS 1-yr Est";
   const id = v.id;
   const detail = v.row?.detail || "";
   const detailParts = detail.split("!!").map(s => s.trim()).filter(Boolean);
@@ -206,15 +207,15 @@ function buildVarLabel(v, labelFormat) {
   const group = v.row?.group || id.replace(/[_\d]+.*/, "");
   if (labelFormat === "short")      return baseLabel;
   if (labelFormat === "with_id")    return baseLabel + " [" + id + "]";
-  if (labelFormat === "full_acs")   return baseLabel + " [" + id + ", ACS 1-yr Est]";
+  if (labelFormat === "full_acs")   return baseLabel + " [" + id + ", " + seriesLabel + "]";
   if (labelFormat === "with_table") return group + ": " + baseLabel + " [" + id + "]";
   return baseLabel;
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
-function generateRScript(queryVars, geography, state, years, wide, labelFormat) {
+function generateRScript(queryVars, geography, state, years, wide, labelFormat, series) {
   const stripE = id => id.endsWith("E") ? id.slice(0, -1) : id;
-  const tableName = geography ? "acs_1yr_by_" + geography.replace(/[^a-zA-Z0-9]/g, "_") + (wide ? "_wide" : "") : "acs_data";
+  const tableName = geography ? "acs_" + series + "_by_" + geography.replace(/[^a-zA-Z0-9]/g, "_") + (wide ? "_wide" : "") : "acs_data";
   const multiYear = years.length > 1;
   const ind = multiYear ? "      " : "  ";
   const seen = new Set();
@@ -224,20 +225,21 @@ function generateRScript(queryVars, geography, state, years, wide, labelFormat) 
     seen.add(name);
     return ind + "  " + name + ' = "' + stripE(v.id) + '"';
   }).join(",\n");
+  const surveyLine = ind + 'survey = "' + (series === "5yr" ? "acs5" : "acs1") + '",\n';
   const geoLine   = geography ? ind + 'geography = "' + geography + '",\n' : "";
   const stateLine = state     ? ind + 'state = "' + state + '",\n' : "";
   const wideLine  = wide      ? ind + 'output = "wide",\n' : "";
   let getAcsBlock;
   if (!multiYear) {
     const yearLine = years.length === 1 ? "  year = " + years[0] + "\n" : "";
-    getAcsBlock = tableName + " <- get_acs(\n" + geoLine + stateLine + wideLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
+    getAcsBlock = tableName + " <- get_acs(\n" + surveyLine + geoLine + stateLine + wideLine + "  variables = c(\n" + varLines + "\n  ),\n" + yearLine + ")";
   } else {
     const yearsVec = "c(" + years.join(", ") + ")";
-    getAcsBlock = "years <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
+    getAcsBlock = "years <- " + yearsVec + "\n\n" + tableName + " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + surveyLine + geoLine + stateLine + wideLine + "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
   }
   const labelLines = queryVars.map(v => {
     const name = v.shortName || v.id;
-    const labelStr = buildVarLabel(v, labelFormat).replace(/"/g, "'");
+    const labelStr = buildVarLabel(v, labelFormat, series).replace(/"/g, "'");
     return '  ' + name + 'E = "' + labelStr + '"';
   }).join(",\n");
   const varLabelBlock = "var_label(" + tableName + ") <- list(\n" + labelLines + "\n)";
@@ -458,7 +460,7 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
     if (!geography || years.length === 0 || queryVars.length === 0) return;
     if (duplicateNames.size > 0) { setGenError("Fix duplicate variable names before generating."); return; }
     setGenError("");
-    setRScript(generateRScript(queryVars, geography, selState, years, wide, labelFormat));
+    setRScript(generateRScript(queryVars, geography, selState, years, wide, labelFormat, series));
     setStataScript(generateStataScript(queryVars, geography, selState, years, labelFormat, series));
   }, [queryVars, geography, selState, years, wide, labelFormat, duplicateNames, series]);
 

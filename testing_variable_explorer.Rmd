@@ -1,0 +1,56 @@
+---
+title: "testing varabale explorer"
+output: html_document
+date: "2026-04-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidycensus)
+library(labelled)
+library(tidyr)
+census_api_key("b8f6c712cbbb9d5a172c960ee27f3dc192408eda", install = TRUE, overwrite=TRUE)
+
+years <- c(2013, 2014, 2015)
+
+acs_5yr_by_region_wide <- map_dfr(years, \(yr) {
+  get_acs(
+      survey = "acs5",
+      geography = "region",
+      output = "wide",
+    variables = c(
+        raceBlackOne_DP = "DP05_0038",
+        raceBlackOne_SexByAge = "B01001B_001"
+    ),
+    year = yr
+  ) |>
+    mutate(year = yr)
+})
+
+var_label(acs_5yr_by_region_wide) <- list(
+  raceBlackOne_DPE = "RACE > Total population > One race > Black or African American [DP05_0038E]",
+  raceBlackOne_SexByAgeE = "Sex › by Age › ( Black or African American Alone) [B01001B_001E]"
+)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

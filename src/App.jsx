@@ -743,7 +743,7 @@ export default function App() {
                   {isP
                     ? <span style={{ background:"#f0fdf4", color:"#16a34a", border:"1px solid #bbf7d0", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>%</span>
                     : <span style={{ background:"#fefce8", color:"#92400e", border:"1px solid #fde68a", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>est</span>}
-                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.bothVar || item.detailVar || "(no label)"}</span>
+                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.detailLabel || item.detailLabel || "(no label)"}</span>
                   {inQ && <span style={{ fontSize:10, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"1px 6px", flexShrink:0 }}>in query</span>}
                 </>);
               }}

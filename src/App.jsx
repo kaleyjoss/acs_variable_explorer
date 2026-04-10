@@ -48,6 +48,7 @@ function parseCSV(text) {
   const idCol        = col("id") !== -1 ? col("id") : col("variable");
   const groupCol     = col("group");
   const labelCol     = col("label_clean");
+  const labelDetail  = col("detail_clean");
   const detailVarCol = col("detail_varname");
   const bothVarCol   = col("both_varname");
   const labelVarCol  = col("label_varname");
@@ -68,6 +69,7 @@ function parseCSV(text) {
       id,
       group:      groupCol      !== -1 ? cols[groupCol]?.trim()                     || "" : "",
       label:      labelCol      !== -1 ? cols[labelCol]?.replace(/^"|"$/g,"")?.trim()  || "" : "",
+      detailLabel:  labelDetail  !== -1 ? cols[labelDetail]?.trim()                || "" : "",
       detailVar:  detailVarCol  !== -1 ? cols[detailVarCol]?.trim()                || "" : "",
       bothVar:    bothVarCol    !== -1 ? cols[bothVarCol]?.trim()                  || "" : "",
       labelVar:   labelVarCol   !== -1 ? cols[labelVarCol]?.trim()                 || "" : "",
@@ -114,7 +116,7 @@ function getVarsForGroup(rows, group) {
 // ── Label string ──────────────────────────────────────────────────────────────
 function buildVarLabel(v, labelFormat, series) {
   const seriesLabel = series === "5yr" ? "ACS 5-yr Est" : "ACS 1-yr Est";
-  const baseLabel = v.detailVar || v.displayName || v.id;
+  const baseLabel = v.detailLabel || v.displayName || v.id;
   const group = v.row?.group || v.id.replace(/[_\d]+.*/, "");
   if (labelFormat === "short")       return baseLabel;
   if (labelFormat === "with_id")     return baseLabel + " [" + v.id + "]";
@@ -301,7 +303,7 @@ function VarChip({ v, onRemove, onRename, isDuplicate }) {
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>·</span>
       <code style={{ color:"#64748b", fontSize:11 }}>{v.id}</code>
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>—</span>
-      <span style={{ color:"#475569", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailVar||v.displayName}</span>
+      <span style={{ color:"#475569", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailLabel||v.displayName}</span>
       {isDuplicate && <span style={{ color:"#dc2626", fontSize:11, marginLeft:6, flexShrink:0 }}>⚠ duplicate</span>}
       <span onClick={onRemove} style={{ cursor:"pointer", color:"#94a3b8", fontSize:15, lineHeight:1, marginLeft:8, flexShrink:0 }}>×</span>
     </div>
@@ -494,7 +496,7 @@ export default function App() {
       uid: selectedVar.id + "-" + Date.now(),
       id: selectedVar.id,
       shortName: suggested,
-      displayName: selectedVar.detailVar || selectedVar.label,
+      displayName: selectedVar.detailLabel || selectedVar.label,
       detailVar: selectedVar.detailVar,
       row: selectedVar,
     }]);

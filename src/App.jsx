@@ -52,7 +52,8 @@ function parseCSV(text) {
   const bothVarCol   = col("both_varname");
   const labelVarCol  = col("label_varname");
   const detailCol    = col("detail");
-  const detailLabelCol = col("detail_label");
+  const baseVarCol    = col("base var");
+  const detailLabelCol= col("detail_label");
   const demoLetterCol= col("demographic letter");
   const prCol        = col("puerto rico");
 
@@ -133,7 +134,10 @@ function suggestShortName(bothVar, id) {
   const isPercent = id && (id.toUpperCase().endsWith("PE") || id.toUpperCase().endsWith("P"));
   let s = bothVar || "";
   s = s.replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
-  return s
+  const tokens = s.split("_").filter(t => t.length > 1 && !/^\d+$/.test(t)).slice(0, 3);
+  if (!tokens.length) return isPercent ? "percVar" : "estVar";
+  const base = toCamelCase(tokens.join("_"));
+  return isPercent ? "perc" + base.charAt(0).toUpperCase() + base.slice(1) : base;
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────

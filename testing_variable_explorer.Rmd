@@ -13,36 +13,157 @@ library(labelled)
 library(tidyr)
 census_api_key("b8f6c712cbbb9d5a172c960ee27f3dc192408eda", install = TRUE, overwrite=TRUE)
 
-years <- c(2013, 2014, 2015)
+years <- c(2024)
 
-acs_5yr_by_region_wide <- map_dfr(years, \(yr) {
+acs_5yr_by_county_wide <- map_dfr(years, \(yr) {
   get_acs(
       survey = "acs5",
-      geography = "region",
+      geography = "place",
+      state = "New Jersey",
       output = "wide",
     variables = c(
-        raceBlackOne_DP = "DP05_0038",
-        raceBlackOne_SexByAge = "B01001B_001"
+        total_pop = "B01003_001",
+        white_pop = "B02008_001",
+        black_pop = "B02009_001",
+        POB_nativity_citizenship___ = "B05002_001",
+        POB_nativity_citizenship____native = "B05002_002",
+        POB_nativity_citizenship____native_born_in_state_of_residence = "B05002_003",
+        POB_nativity_citizenship____native_born_in_other_state_ = "B05002_004",
+        POB_nativity_citizenship____native_born_in_other_state__northeast = "B05002_005",
+        POB_nativity_citizenship____native_born_in_other_state__midwest = "B05002_006",
+        POB_nativity_citizenship____native_born_in_other_state__south = "B05002_007",
+        POB_nativity_citizenship____native_born_in_other_state__west = "B05002_008",
+        POB_nativity_citizenship____native_born_outside_the_US = "B05002_009",
+        POB_nativity_citizenship____native_born_outside_the_US_puerto_rico = "B05002_010",
+        POB_nativity_citizenship____native_born_outside_the_US_u.s._island_areas = "B05002_011",
+        POB_nativity_citizenship____native_born_outside_the_US_born_abroad_of_american_parent_s = "B05002_012",
+        POB_nativity_citizenship____foreign_born = "B05002_013",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen = "B05002_014",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_europe = "B05002_015",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_asia = "B05002_016",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_africa = "B05002_017",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_oceania = "B05002_018",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_latin_america = "B05002_019",
+        POB_nativity_citizenship____foreign_born_naturalized_citizen_northern_america = "B05002_020",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen = "B05002_021",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_europe = "B05002_022",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_asia = "B05002_023",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_africa = "B05002_024",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_oceania = "B05002_025",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_latin_america = "B05002_026",
+        POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_northern_america = "B05002_027",
+        AIAN_pop = "B02010_001",
+        asian_pop = "B02011_001",
+        race____other_race_alone = "B02001_007",
+        race____multiple_races = "B02001_008",
+        hisp_origin____hisp = "B03003_003",
+        POB_by_lang_home_and_ability_speak_english_____speak_only_english = "B06007_002",
+        POB_by_lang_home_and_ability_speak_english_____speak_spanish = "B06007_003",
+        POB_by_lang_home_and_ability_speak_english_____speak_spanish_speak_english_very_well = "B06007_004",
+        POB_by_lang_home_and_ability_speak_english_____speak_spanish_speak_english_less_than_very_well = "B06007_005",
+        POB_by_lang_home_and_ability_speak_english_____speak_other_languages = "B06007_006",
+        POB_by_lang_home_and_ability_speak_english_____speak_other_languages_speak_english_very_well = "B06007_007",
+        means_of_transportation_work_by_pov_status___ = "B08122_001",
+        means_of_transportation_work_by_pov_status____below_100_percent_pov_level = "B08122_002",
+        means_of_transportation_work_by_pov_status____100_149_percent_pov_level = "B08122_003",
+        means_of_transportation_work_by_pov_status____at_or_above_150_percent_pov_level = "B08122_004",
+        receipt_of_SSI_cash_public_assistance_income_or_SNAP_by_hh_type_for_children_u18_yrs_in__hholds____living_in__hhold_with_SSI_cash_public_assistance_income_or_SNAP_ = "B09010_002",
+        receipt_of_SSI_cash_public_assistance_income_or_SNAP_by_hh_type_for_children_u18_yrs_in__hholds____living_in__hhold_with_SSI_cash_public_assistance_income_or_SNAP__in_family__hholds = "B09010_003",
+        pov_status_by_sex_by_age____income__below_pov_level = "B17001_002",
+        pov_status_by_sex_by_age____income__at_or_above_pov_level = "B17001_031",
+        aggregate_hh_income___aggregate_hh_income__in_2022dollars = "B19025_001",
+        aggregate_hh_income_white_alone_hholder___aggregate_hh_income__in_2022dollars = "B19025A_001",
+        aggregate_hh_income_black_alone_hholder___aggregate_hh_income__in_2022dollars = "B19025B_001",
+        aggregate_hh_income_hisp_hholder___aggregate_hh_income__in_2022dollars = "B19025I_001",
+        median_gross_rent_dollars___median_gross_rent = "B25064_001",
+        housing_costs_pct_income___ = "B25140_001",
+        housing_costs_pct_income____rented = "B25140_010",
+        housing_costs_pct_income____owned_units_without_a_mortgage = "B25140_006",
+        housing_costs_pct_income____owned_units_with_a_mortgage = "B25140_002",
+        financial_characteristics___percent_renter_occupied_housing_units_occupied_housing_units = "S2503_C06_001",
+        financial_characteristics___percent_occupied_housing_units_occupied_housing_units = "S2503_C02_001",
+        financial_characteristics___percent_owner_occupied_housing_units_occupied_housing_units = "S2503_C04_001"
     ),
     year = yr
   ) |>
     mutate(year = yr)
 })
 
-var_label(acs_5yr_by_region_wide) <- list(
-  raceBlackOne_DPE = "RACE > Total population > One race > Black or African American [DP05_0038E]",
-  raceBlackOne_SexByAgeE = "Sex › by Age › ( Black or African American Alone) [B01001B_001E]"
+var_label(acs_5yr_by_county_wide) <- list(
+  total_popE = "Total Population [B01003_001E]",
+  white_popE = "White Alone or in Combination With One or More Other Races [B02008_001E]",
+  black_popE = "Black or African American Alone or in Combination With One or More Other Races [B02009_001E]",
+  POB_nativity_citizenship___E = "Place of Birth by Nativity and Citizenship Status [B05002_001E]",
+  POB_nativity_citizenship____nativeE = "Native [B05002_002E]",
+  POB_nativity_citizenship____native_born_in_state_of_residenceE = "Native Born in state of residence [B05002_003E]",
+  POB_nativity_citizenship____native_born_in_other_state_E = "Native Born in other state in the United States [B05002_004E]",
+  POB_nativity_citizenship____native_born_in_other_state__northeastE = "Native Born in other state in the United States Northeast [B05002_005E]",
+  POB_nativity_citizenship____native_born_in_other_state__midwestE = "Native Born in other state in the United States Midwest [B05002_006E]",
+  POB_nativity_citizenship____native_born_in_other_state__southE = "Native Born in other state in the United States South [B05002_007E]",
+  POB_nativity_citizenship____native_born_in_other_state__westE = "Native Born in other state in the United States West [B05002_008E]",
+  POB_nativity_citizenship____native_born_outside_the_USE = "Native Born outside the United States [B05002_009E]",
+  POB_nativity_citizenship____native_born_outside_the_US_puerto_ricoE = "Native Born outside the United States Puerto Rico [B05002_010E]",
+  POB_nativity_citizenship____native_born_outside_the_US_u.s._island_areasE = "Native Born outside the United States U.S. Island Areas [B05002_011E]",
+  POB_nativity_citizenship____native_born_outside_the_US_born_abroad_of_american_parent_sE = "Native Born outside the United States Born abroad of American parent(s) [B05002_012E]",
+  POB_nativity_citizenship____foreign_bornE = "Foreign born [B05002_013E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizenE = "Foreign born Naturalized U.S. citizen [B05002_014E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_europeE = "Foreign born Naturalized U.S. citizen Europe [B05002_015E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_asiaE = "Foreign born Naturalized U.S. citizen Asia [B05002_016E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_africaE = "Foreign born Naturalized U.S. citizen Africa [B05002_017E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_oceaniaE = "Foreign born Naturalized U.S. citizen Oceania [B05002_018E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_latin_americaE = "Foreign born Naturalized U.S. citizen Latin America [B05002_019E]",
+  POB_nativity_citizenship____foreign_born_naturalized_citizen_northern_americaE = "Foreign born Naturalized U.S. citizen Northern America [B05002_020E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizenE = "Foreign born Not a U.S. citizen [B05002_021E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_europeE = "Foreign born Not a U.S. citizen Europe [B05002_022E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_asiaE = "Foreign born Not a U.S. citizen Asia [B05002_023E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_africaE = "Foreign born Not a U.S. citizen Africa [B05002_024E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_oceaniaE = "Foreign born Not a U.S. citizen Oceania [B05002_025E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_latin_americaE = "Foreign born Not a U.S. citizen Latin America [B05002_026E]",
+  POB_nativity_citizenship____foreign_born_not_a_u.s._citizen_northern_americaE = "Foreign born Not a U.S. citizen Northern America [B05002_027E]",
+  AIAN_popE = "American Indian and Alaska Native Alone or in Combination With One or More Other Races [B02010_001E]",
+  asian_popE = "Asian Alone or in Combination With One or More Other Races [B02011_001E]",
+  race____other_race_aloneE = "Some Other Race alone [B02001_007E]",
+  race____multiple_racesE = "Two or More Races [B02001_008E]",
+  hisp_origin____hispE = "Hispanic or Latino [B03003_003E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_only_englishE = "Speak only English [B06007_002E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_spanishE = "Speak Spanish [B06007_003E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_spanish_speak_english_very_wellE = "Speak Spanish Speak English very well [B06007_004E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_spanish_speak_english_less_than_very_wellE = "Speak Spanish Speak English less than very well [B06007_005E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_other_languagesE = "Speak other languages [B06007_006E]",
+  POB_by_lang_home_and_ability_speak_english_____speak_other_languages_speak_english_very_wellE = "Speak other languages Speak English very well [B06007_007E]",
+  means_of_transportation_work_by_pov_status___E = "Means of Transportation to Work by Poverty Status [B08122_001E]",
+  means_of_transportation_work_by_pov_status____below_100_percent_pov_levelE = "Below 100 percent of the poverty level [B08122_002E]",
+  means_of_transportation_work_by_pov_status____100_149_percent_pov_levelE = "100 to 149 percent of the poverty level [B08122_003E]",
+  means_of_transportation_work_by_pov_status____at_or_above_150_percent_pov_levelE = "At or above 150 percent of the poverty level [B08122_004E]",
+  receipt_of_SSI_cash_public_assistance_income_or_SNAP_by_hh_type_for_children_u18_yrs_in__hholds____living_in__hhold_with_SSI_cash_public_assistance_income_or_SNAP_E = "Living in household with Supplemental Security Income (SSI), cash public assistance income, or Food Stamps/SNAP in the past 12 months [B09010_002E]",
+  receipt_of_SSI_cash_public_assistance_income_or_SNAP_by_hh_type_for_children_u18_yrs_in__hholds____living_in__hhold_with_SSI_cash_public_assistance_income_or_SNAP__in_family__hholdsE = "Living in household with Supplemental Security Income (SSI), cash public assistance income, or Food Stamps/SNAP in the past 12 months In family households [B09010_003E]",
+  pov_status_by_sex_by_age____income__below_pov_levelE = "Income in the past 12 months below poverty level [B17001_002E]",
+  pov_status_by_sex_by_age____income__at_or_above_pov_levelE = "Income in the past 12 months at or above poverty level [B17001_031E]",
+  aggregate_hh_income___aggregate_hh_income__in_2022dollarsE = "Aggregate household income in the past 12 months (in 2022 inflation-adjusted dollars) [B19025_001E]",
+  aggregate_hh_income_white_alone_hholder___aggregate_hh_income__in_2022dollarsE = "Aggregate household income in the past 12 months (in 2022 inflation-adjusted dollars) [B19025A_001E]",
+  aggregate_hh_income_black_alone_hholder___aggregate_hh_income__in_2022dollarsE = "Aggregate household income in the past 12 months (in 2022 inflation-adjusted dollars) [B19025B_001E]",
+  aggregate_hh_income_hisp_hholder___aggregate_hh_income__in_2022dollarsE = "Aggregate household income in the past 12 months (in 2022 inflation-adjusted dollars) [B19025I_001E]",
+  median_gross_rent_dollars___median_gross_rentE = "Median gross rent [B25064_001E]",
+  housing_costs_pct_income___E = "Housing Costs as a Percentage of Household Income [B25140_001E]",
+  housing_costs_pct_income____rentedE = "Rented [B25140_010E]",
+  housing_costs_pct_income____owned_units_without_a_mortgageE = "Owned Units without a Mortgage [B25140_006E]",
+  housing_costs_pct_income____owned_units_with_a_mortgageE = "Owned Units with a Mortgage [B25140_002E]",
+  financial_characteristics___percent_renter_occupied_housing_units_occupied_housing_unitsE = "Percent renter-occupied housing units Occupied housing units [S2503_C06_001E]",
+  financial_characteristics___percent_occupied_housing_units_occupied_housing_unitsE = "Percent occupied housing units Occupied housing units [S2503_C02_001E]",
+  financial_characteristics___percent_owner_occupied_housing_units_occupied_housing_unitsE = "Percent owner-occupied housing units Occupied housing units [S2503_C04_001E]"
 )
+
+
+
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r cars}
-summary(cars)
+library(dplyr)
+hoboken_wide = acs_5yr_by_county_wide |> 
+  filter(NAME == "Hoboken city, New Jersey")
+
+hoboken_long = t(hoboken_wide)
 ```
 
 ## Including Plots

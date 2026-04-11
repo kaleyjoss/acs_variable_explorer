@@ -48,12 +48,11 @@ function parseCSV(text) {
   const idCol        = col("id") !== -1 ? col("id") : col("variable");
   const groupCol     = col("group");
   const labelCol     = col("label_clean");
-  const labelDetail  = col("detail_clean");
   const detailVarCol = col("detail_varname");
   const bothVarCol   = col("both_varname");
   const labelVarCol  = col("label_varname");
   const detailCol    = col("detail");
-  const baseVarCol   = col("base var");
+  const detailLabelCol = col("detail_label");
   const demoLetterCol= col("demographic letter");
   const prCol        = col("puerto rico");
 
@@ -69,13 +68,13 @@ function parseCSV(text) {
       id,
       group:      groupCol      !== -1 ? cols[groupCol]?.trim()                     || "" : "",
       label:      labelCol      !== -1 ? cols[labelCol]?.replace(/^"|"$/g,"")?.trim()  || "" : "",
-      detailLabel:  labelDetail  !== -1 ? cols[labelDetail]?.trim()                || "" : "",
       detailVar:  detailVarCol  !== -1 ? cols[detailVarCol]?.trim()                || "" : "",
       bothVar:    bothVarCol    !== -1 ? cols[bothVarCol]?.trim()                  || "" : "",
       labelVar:   labelVarCol   !== -1 ? cols[labelVarCol]?.trim()                 || "" : "",
       detail:     detailCol     !== -1 ? cols[detailCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
       baseVar:    baseVarCol    !== -1 ? cols[baseVarCol]?.trim()                  || "" : "",
       demoLetter: demoLetterCol !== -1 ? cols[demoLetterCol]?.trim()               || "" : "",
+      detailLabel:detailLabelCol!== -1 ? cols[detailLabelCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
       isPR:       prCol         !== -1 ? cols[prCol]?.trim().toLowerCase() === "true" || cols[prCol]?.trim() === "1" : false,
     });
   }
@@ -116,7 +115,7 @@ function getVarsForGroup(rows, group) {
 // ── Label string ──────────────────────────────────────────────────────────────
 function buildVarLabel(v, labelFormat, series) {
   const seriesLabel = series === "5yr" ? "ACS 5-yr Est" : "ACS 1-yr Est";
-  const baseLabel = v.detailLabel || v.displayName || v.id;
+  const baseLabel = v.detailVar || v.displayName || v.id;
   const group = v.row?.group || v.id.replace(/[_\d]+.*/, "");
   if (labelFormat === "short")       return baseLabel;
   if (labelFormat === "with_id")     return baseLabel + " [" + v.id + "]";
@@ -131,7 +130,10 @@ function toCamelCase(str) {
 }
 
 function suggestShortName(bothVar, id) {
-  return bothVar
+  const isPercent = id && (id.toUpperCase().endsWith("PE") || id.toUpperCase().endsWith("P"));
+  let s = bothVar || "";
+  s = s.replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
+  return s
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
@@ -303,7 +305,7 @@ function VarChip({ v, onRemove, onRename, isDuplicate }) {
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>·</span>
       <code style={{ color:"#64748b", fontSize:11 }}>{v.id}</code>
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>—</span>
-      <span style={{ color:"#475569", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailLabel||v.displayName}</span>
+      <span style={{ color:"#475569", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailVar||v.displayName}</span>
       {isDuplicate && <span style={{ color:"#dc2626", fontSize:11, marginLeft:6, flexShrink:0 }}>⚠ duplicate</span>}
       <span onClick={onRemove} style={{ cursor:"pointer", color:"#94a3b8", fontSize:15, lineHeight:1, marginLeft:8, flexShrink:0 }}>×</span>
     </div>
@@ -481,7 +483,7 @@ export default function App() {
     const q = search.toLowerCase();
     return rows.filter(r =>
       r.id.toLowerCase().includes(q) ||
-      r.detailLabel.toLowerCase().includes(q) ||
+      r.detailVar.toLowerCase().includes(q) ||
       r.label.toLowerCase().includes(q) ||
       r.baseVar.toLowerCase().includes(q)
     ).slice(0, 60);
@@ -496,8 +498,8 @@ export default function App() {
       uid: selectedVar.id + "-" + Date.now(),
       id: selectedVar.id,
       shortName: suggested,
-      displayName: selectedVar.detailLabel || selectedVar.label,
-      detailLabel: selectedVar.detailLabel,
+      displayName: selectedVar.detailVar || selectedVar.label,
+      detailVar: selectedVar.detailVar,
       row: selectedVar,
     }]);
     setAdded(true);
@@ -633,7 +635,7 @@ export default function App() {
                   onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";}}
                   onMouseLeave={e=>{e.currentTarget.style.background="white";}}>
                   <div>
-                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.detailLabel||r.label}</div>
+                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.detailVar||r.label}</div>
                     <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{r.baseVar} › {r.group}</div>
                   </div>
                   <code style={{ background:"#eff6ff", color:"#1e40af", padding:"3px 8px", borderRadius:5, fontSize:12, fontWeight:700, flexShrink:0, marginLeft:12 }}>{r.id}</code>
@@ -743,7 +745,7 @@ export default function App() {
                   {isP
                     ? <span style={{ background:"#f0fdf4", color:"#16a34a", border:"1px solid #bbf7d0", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>%</span>
                     : <span style={{ background:"#fefce8", color:"#92400e", border:"1px solid #fde68a", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>est</span>}
-                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.detailLabel || item.detailLabel || "(no label)"}</span>
+                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.detailLabel || item.bothVar || item.detailVar || "(no label)"}</span>
                   {inQ && <span style={{ fontSize:10, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"1px 6px", flexShrink:0 }}>in query</span>}
                 </>);
               }}

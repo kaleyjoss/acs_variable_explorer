@@ -24,8 +24,8 @@ The variable parsing and csv is available in /public. The UI for this webpage wa
     - Allocation (imputation) rate over time
     - Margin of error over time
     - If it's in 5y, 1y or both
-- Add wide format option (will have to work around issues with too-long variable names...)
-- Add python, direct-API script rendering options
+- Add 'select all' for variable lists within a group
+- Add filter to just E variables 
 
 ***UI written with Claude code***
 

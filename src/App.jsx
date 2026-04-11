@@ -53,7 +53,7 @@ function parseCSV(text) {
   const labelVarCol  = col("label_varname");
   const detailCol    = col("detail");
   const baseVarCol    = col("base var");
-  const detailLabelCol= col("detail_label");
+  const detailLabelCol= col("detail_clean");
   const demoLetterCol= col("demographic letter");
   const prCol        = col("puerto rico");
 

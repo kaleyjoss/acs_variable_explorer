@@ -448,7 +448,7 @@ export default function App() {
   const [geography, setGeography]   = useState("");
   const [selState, setSelState]     = useState("");
   const [years, setYears]           = useState([]);
-  const [wide, setWide]             = useState(false);
+  const [wide, setWide]             = useState(true);
   const [queryVars, setQueryVars]   = useState([]);
 
   const activeSeries = ACS_SERIES.find(s => s.key === series);

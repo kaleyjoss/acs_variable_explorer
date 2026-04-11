@@ -131,13 +131,7 @@ function toCamelCase(str) {
 }
 
 function suggestShortName(bothVar, id) {
-  const isPercent = id && (id.toUpperCase().endsWith("PE") || id.toUpperCase().endsWith("P"));
-  let s = bothVar || "";
-  s = s.replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
-  const tokens = s.split("_").filter(t => t.length > 1 && !/^\d+$/.test(t)).slice(0, 3);
-  if (!tokens.length) return isPercent ? "percVar" : "estVar";
-  const base = toCamelCase(tokens.join("_"));
-  return isPercent ? "perc" + base.charAt(0).toUpperCase() + base.slice(1) : base;
+  return bothVar
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────

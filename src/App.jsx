@@ -632,7 +632,7 @@ export default function App() {
                   onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";}}
                   onMouseLeave={e=>{e.currentTarget.style.background="white";}}>
                   <div>
-                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.detailVar||r.label}</div>
+                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.detailLabel||r.label}</div>
                     <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{r.baseVar} › {r.group}</div>
                   </div>
                   <code style={{ background:"#eff6ff", color:"#1e40af", padding:"3px 8px", borderRadius:5, fontSize:12, fontWeight:700, flexShrink:0, marginLeft:12 }}>{r.id}</code>

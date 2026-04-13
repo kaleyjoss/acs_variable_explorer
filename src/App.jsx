@@ -479,10 +479,16 @@ export default function App() {
   const searchResults = useMemo(() => {
     if (!search) return [];
     const q = search.toLowerCase();
-    return rows.filter(r =>
-      r.label.toLowerCase().includes(q)
-    ).slice(0, 60);
-  }, [rows, search]);
+    const seenLabels = new Set();
+
+    return rows.filter(r => {
+        if (!r.label.toLowerCase().includes(q)) return false;
+        if (seenLabels.has(r.label)) return false; // Check if we already have a row with this label
+        seenLabels.add(r.label); // Mark label as seen and keep the row
+        return true;
+    }).slice(0, 60);
+    }, [rows, search]);
+
 
   const alreadyInQuery = selectedVar && queryVars.some(v => v.id === selectedVar.id);
 

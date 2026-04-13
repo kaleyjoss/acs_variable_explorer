@@ -478,16 +478,31 @@ export default function App() {
   // Search: match id, detailLabel, label, baseVar
   const searchResults = useMemo(() => {
     if (!search) return [];
-    const q = search.toLowerCase();
+
+    // 1. Split by space. 
+    // Using /\s+/ handles accidental double spaces, and .filter(Boolean) removes empty strings.
+    const arrayOfStrings = search.toLowerCase().split(/\s+/).filter(Boolean);
     const seenLabels = new Set();
 
     return rows.filter(r => {
-        if (!r.label.toLowerCase().includes(q)) return false;
-        if (seenLabels.has(r.label)) return false; // Check if we already have a row with this label
-        seenLabels.add(r.label); // Mark label as seen and keep the row
+        // Cache the lowercased label so we don't recalculate it for every single word
+        const rowLabel = r.label.toLowerCase();
+
+        // 2. .every() checks if EVERY word in the array is found in the label
+        const matchesAllWords = arrayOfStrings.every(word => rowLabel.includes(word));
+        
+        // If it doesn't match all words, discard the row
+        if (!matchesAllWords) return false; 
+
+        // 3. Check if we already have a row with this exact label
+        if (seenLabels.has(r.label)) return false; 
+
+        // 4. Mark label as seen and keep the row
+        seenLabels.add(r.label); 
         return true;
+
     }).slice(0, 60);
-    }, [rows, search]);
+  }, [rows, search]);
 
 
   const alreadyInQuery = selectedVar && queryVars.some(v => v.id === selectedVar.id);
@@ -591,7 +606,7 @@ export default function App() {
         {/* Search */}
         <div style={{ position:"relative", marginBottom:12 }}>
           <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#94a3b8" }}>🔍</span>
-          <input placeholder="Search variables, tables, or descriptions…" value={search}
+          <input placeholder="Search tables..." value={search}
             onChange={e=>{ setSearch(e.target.value); if(e.target.value) resetNav(); }}
             style={{ width:"100%", boxSizing:"border-box", padding:"11px 12px 11px 38px", fontSize:14, border:"1.5px solid #cbd5e1", borderRadius:10, outline:"none", background:"white" }} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#94a3b8" }}>×</button>}

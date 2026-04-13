@@ -480,9 +480,7 @@ export default function App() {
     if (!search) return [];
     const q = search.toLowerCase();
     return rows.filter(r =>
-      r.detailLabel.toLowerCase().includes(q) ||
-      r.label.toLowerCase().includes(q) ||
-      r.baseVar.toLowerCase().includes(q)
+      r.detailLabel.toLowerCase().includes(q)
     ).slice(0, 60);
   }, [rows, search]);
 

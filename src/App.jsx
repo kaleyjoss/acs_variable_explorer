@@ -481,7 +481,7 @@ export default function App() {
     const q = search.toLowerCase();
     return rows.filter(r =>
       r.id.toLowerCase().includes(q) ||
-      r.detailVar.toLowerCase().includes(q) ||
+      r.detailLabel.toLowerCase().includes(q) ||
       r.label.toLowerCase().includes(q) ||
       r.baseVar.toLowerCase().includes(q)
     ).slice(0, 60);

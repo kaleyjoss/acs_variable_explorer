@@ -163,7 +163,10 @@ library(dplyr)
 hoboken_wide = acs_5yr_by_county_wide |> 
   filter(NAME == "Hoboken city, New Jersey")
 
-hoboken_long = t(hoboken_wide)
+hoboken_E <- hoboken_wide |> 
+  select(ends_with("E"))
+
+hoboken_long = t(hoboken_E)
 ```
 
 ## Including Plots
@@ -171,7 +174,22 @@ hoboken_long = t(hoboken_wide)
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
-plot(pressure)
-```
+library(tidyverse)
+library(tidycensus)
+library(labelled)
+
+acs_1yr_by_county_wide <- get_acs(
+  survey = "acs1",
+  geography = "county",
+  output = "wide",
+  variables = c(
+    sex_by_age____male = "B01001_002"
+  ),
+  year = 2024
+)
+
+var_label(acs_1yr_by_county_wide) <- list(
+  sex_by_age____maleE = "__male [B01001_002E]"
+)```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

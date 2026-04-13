@@ -475,12 +475,11 @@ export default function App() {
     selectedGroup ? getVarsForGroup(rows, selectedGroup.group) : [],
   [rows, selectedGroup]);
 
-  // Search: match id, detailVar, label, baseVar
+  // Search: match id, detailLabel, label, baseVar
   const searchResults = useMemo(() => {
     if (!search) return [];
     const q = search.toLowerCase();
     return rows.filter(r =>
-      r.id.toLowerCase().includes(q) ||
       r.detailLabel.toLowerCase().includes(q) ||
       r.label.toLowerCase().includes(q) ||
       r.baseVar.toLowerCase().includes(q)

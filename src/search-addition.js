@@ -27,3 +27,9 @@
 
     }).slice(0, 60);
   }, [rows, search]);
+
+
+  // make this the suggestShortName for now
+  function suggestShortName(bothVar, id) {
+    return bothVar
+}

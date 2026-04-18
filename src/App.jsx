@@ -27,7 +27,7 @@ const GEO_STATA = {
   "school district (secondary)":"sds",
 };
 
-// ── CSV parsing ───────────────────────────────────────────────────────────────
+// ── CSV ───────────────────────────────────────────────────────────────────────
 function parseCSVLine(line) {
   const cols = []; let cur = "", inQ = false;
   for (const ch of line) {
@@ -44,21 +44,18 @@ function parseCSV(text) {
   const lines = text.trim().replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
   const hdrs = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase());
   const col = n => hdrs.findIndex(h => h === n);
-
-  const idCol        = col("id") !== -1 ? col("id") : col("variable");
-  const groupCol     = col("group");
-  const labelCol     = col("label_clean");
-  const detailVarCol = col("detail_varname");
-  const bothVarCol   = col("both_varname");
-  const labelVarCol  = col("label_varname");
-  const detailCol    = col("detail");
+  const idCol         = col("id") !== -1 ? col("id") : col("variable");
+  const groupCol      = col("group");
+  const labelCol      = col("label_clean");
+  const detailVarCol  = col("detail_varname");
+  const bothVarCol    = col("both_varname");
+  const labelVarCol   = col("label_varname");
+  const detailCol     = col("detail");
   const baseVarCol    = col("base var");
-  const detailLabelCol= col("detail_clean");
-  const demoLetterCol= col("demographic letter");
-  const prCol        = col("puerto rico");
-
-  if (idCol === -1) return { error: "Could not find 'id' or 'variable' column. Found: " + hdrs.join(", ") };
-
+  const demoLetterCol = col("demographic letter");
+  const prCol         = col("puerto rico");
+  const detailCleanCol= col("detail_clean") !== -1 ? col("detail_clean") : col("detail clean");
+  if (idCol === -1) return { error: "Could not find 'id' column. Found: " + hdrs.join(", ") };
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i]);
@@ -67,48 +64,34 @@ function parseCSV(text) {
     if (!id || id.toLowerCase() === "geoid" || id.toLowerCase() === "geo_id") continue;
     rows.push({
       id,
-      group:      groupCol      !== -1 ? cols[groupCol]?.trim()                     || "" : "",
-      label:      labelCol      !== -1 ? cols[labelCol]?.replace(/^"|"$/g,"")?.trim()  || "" : "",
-      detailVar:  detailVarCol  !== -1 ? cols[detailVarCol]?.trim()                || "" : "",
-      bothVar:    bothVarCol    !== -1 ? cols[bothVarCol]?.trim()                  || "" : "",
-      labelVar:   labelVarCol   !== -1 ? cols[labelVarCol]?.trim()                 || "" : "",
-      detail:     detailCol     !== -1 ? cols[detailCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
-      baseVar:    baseVarCol    !== -1 ? cols[baseVarCol]?.trim()                  || "" : "",
-      demoLetter: demoLetterCol !== -1 ? cols[demoLetterCol]?.trim()               || "" : "",
-      detailLabel:detailLabelCol!== -1 ? cols[detailLabelCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
-      isPR:       prCol         !== -1 ? cols[prCol]?.trim().toLowerCase() === "true" || cols[prCol]?.trim() === "1" : false,
+      group:       groupCol      !== -1 ? cols[groupCol]?.trim()                      || "" : "",
+      label:       labelCol      !== -1 ? cols[labelCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
+      detailVar:   detailVarCol  !== -1 ? cols[detailVarCol]?.trim()                 || "" : "",
+      bothVar:     bothVarCol    !== -1 ? cols[bothVarCol]?.trim()                   || "" : "",
+      labelVar:    labelVarCol   !== -1 ? cols[labelVarCol]?.trim()                  || "" : "",
+      detail:      detailCol     !== -1 ? cols[detailCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
+      baseVar:     baseVarCol    !== -1 ? cols[baseVarCol]?.trim()                   || "" : "",
+      demoLetter:  demoLetterCol !== -1 ? cols[demoLetterCol]?.trim()                || "" : "",
+      isPR:        prCol         !== -1 ? (cols[prCol]?.trim().toLowerCase()==="true"||cols[prCol]?.trim()==="1") : false,
+      detailLabel: detailCleanCol !== -1 ? cols[detailCleanCol]?.replace(/^"|"$/g,"")?.trim() || "" : "",
     });
   }
   return { rows };
 }
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
-
-// Level 1: unique Base Var + label_clean
 function buildBaseVars(rows) {
   const seen = new Map();
-  for (const r of rows) {
-    if (r.baseVar && !seen.has(r.baseVar)) seen.set(r.baseVar, r.label);
-  }
-  return Array.from(seen.entries())
-    .map(([baseVar, label]) => ({ baseVar, label }))
-    .sort((a, b) => a.baseVar.localeCompare(b.baseVar));
+  for (const r of rows) { if (r.baseVar && !seen.has(r.baseVar)) seen.set(r.baseVar, r.label); }
+  return Array.from(seen.entries()).map(([baseVar, label]) => ({ baseVar, label })).sort((a,b) => a.baseVar.localeCompare(b.baseVar));
 }
 
-// Level 2: unique Group + label_clean for a given Base Var
 function buildGroupsForBaseVar(rows, baseVar) {
   const seen = new Map();
-  for (const r of rows) {
-    if (r.baseVar === baseVar && r.group && !seen.has(r.group)) {
-      seen.set(r.group, r.label);
-    }
-  }
-  return Array.from(seen.entries())
-    .map(([group, label]) => ({ group, label }))
-    .sort((a, b) => a.group.localeCompare(b.group));
+  for (const r of rows) { if (r.baseVar === baseVar && r.group && !seen.has(r.group)) seen.set(r.group, r.label); }
+  return Array.from(seen.entries()).map(([group, label]) => ({ group, label })).sort((a,b) => a.group.localeCompare(b.group));
 }
 
-// Level 3: all rows for a given Group
 function getVarsForGroup(rows, group) {
   return rows.filter(r => r.group === group);
 }
@@ -116,27 +99,31 @@ function getVarsForGroup(rows, group) {
 // ── Label string ──────────────────────────────────────────────────────────────
 function buildVarLabel(v, labelFormat, series) {
   const seriesLabel = series === "5yr" ? "ACS 5-yr Est" : "ACS 1-yr Est";
-  const baseLabel = v.detailVar || v.displayName || v.id;
+  const baseLabel = v.detailLabel || v.detailVar || v.displayName || v.id;
   const group = v.row?.group || v.id.replace(/[_\d]+.*/, "");
-  if (labelFormat === "short")       return baseLabel;
-  if (labelFormat === "with_id")     return baseLabel + " [" + v.id + "]";
-  if (labelFormat === "full_acs")    return baseLabel + " [" + v.id + ", " + seriesLabel + "]";
-  if (labelFormat === "with_table")  return group + ": " + baseLabel + " [" + v.id + "]";
+  if (labelFormat === "short")      return baseLabel;
+  if (labelFormat === "with_id")    return baseLabel + " [" + v.id + "]";
+  if (labelFormat === "full_acs")   return baseLabel + " [" + v.id + ", " + seriesLabel + "]";
+  if (labelFormat === "with_table") return group + ": " + baseLabel + " [" + v.id + "]";
   return baseLabel;
 }
 
 // ── Name suggestion ───────────────────────────────────────────────────────────
-function toCamelCase(str) {
-  return str.replace(/_+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase());
-}
+function toCamelCase(str) { return str.replace(/_+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()); }
 
 function suggestShortName(bothVar, id) {
-  return bothVar
+  const isPercent = id && (id.toUpperCase().endsWith("PE") || id.toUpperCase().endsWith("P"));
+  let s = (bothVar || "").replace(/^est_tot_/, "").replace(/^perc_/, "").replace(/^est_/, "");
+  const tokens = s.split("_").filter(t => t.length > 1 && !/^\d+$/.test(t)).slice(0, 3);
+  if (!tokens.length) return isPercent ? "percVar" : "estVar";
+  const base = toCamelCase(tokens.join("_"));
+  return isPercent ? "perc" + base.charAt(0).toUpperCase() + base.slice(1) : base;
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
-function generateRScript(queryVars, geography, state, years, wide, labelFormat, series) {
+function generateRScript(queryVars, geography, state, years, wide, labelFormat, series, tablePrefixes) {
   const stripE = id => id.endsWith("E") ? id.slice(0,-1) : id;
+  const getFinal = v => (tablePrefixes[v.row?.group || ""] || "") + (v.shortName || v.id);
   const tableName = geography
     ? "acs_" + series + "_by_" + geography.replace(/[^a-zA-Z0-9]/g,"_") + (wide ? "_wide" : "")
     : "acs_data";
@@ -144,7 +131,7 @@ function generateRScript(queryVars, geography, state, years, wide, labelFormat, 
   const ind = multiYear ? "      " : "  ";
   const seen = new Set();
   const varLines = queryVars.map(v => {
-    let name = v.shortName || v.id;
+    let name = getFinal(v);
     if (seen.has(name)) name = name + "_" + v.id.replace(/\W/g,"");
     seen.add(name);
     return ind + "  " + name + ' = "' + stripE(v.id) + '"';
@@ -164,12 +151,21 @@ function generateRScript(queryVars, geography, state, years, wide, labelFormat, 
       " <- map_dfr(years, \\(yr) {\n  get_acs(\n" + surveyLine + geoLine + stateLine + wideLine +
       "    variables = c(\n" + varLines + "\n    ),\n    year = yr\n  ) |>\n    mutate(year = yr)\n})";
   }
-  const labelLines = queryVars.map(v => {
-    const name = v.shortName || v.id;
-    return '  ' + name + 'E = "' + buildVarLabel(v, labelFormat, series).replace(/"/g,"'") + '"';
-  }).join(",\n");
+  const labelLines = queryVars.map(v =>
+    '  ' + getFinal(v) + 'E = "' + buildVarLabel(v, labelFormat, series).replace(/"/g,"'") + '"'
+  ).join(",\n");
+
+  const countyBlock = geography === "county"
+    ? "\n\n# Generate FIPS codes for county-level data\n" +
+      tableName + " <- " + tableName + " |>\n" +
+      '  mutate(\n' +
+      '    fips_state        = str_pad(substr(GEOID, 1, 2), 2, pad = "0"),\n' +
+      '    fips_county       = str_pad(substr(GEOID, 3, 5), 3, pad = "0"),\n' +
+      '    fips_state_county = GEOID\n' +
+      '  )' : "";
+
   return "library(tidyverse)\nlibrary(tidycensus)\nlibrary(labelled)\n\n" +
-    getAcsBlock + "\n\nvar_label(" + tableName + ") <- list(\n" + labelLines + "\n)";
+    getAcsBlock + "\n\nvar_label(" + tableName + ") <- list(\n" + labelLines + "\n)" + countyBlock;
 }
 
 // ── Stata script ──────────────────────────────────────────────────────────────
@@ -181,10 +177,11 @@ function detectProduct(id) {
   return "";
 }
 
-function generateStataScript(queryVars, geography, state, years, labelFormat, series) {
+function generateStataScript(queryVars, geography, state, years, labelFormat, series, tablePrefixes) {
   const sample = series === "5yr" ? 5 : 1;
   const seriesLabel = series === "5yr" ? "5-Year" : "1-Year";
   const stripE = id => id.endsWith("E") ? id.slice(0,-1) : id;
+  const getFinal = v => (tablePrefixes[v.row?.group || ""] || "") + (v.shortName || v.id);
   const stataId = id => stripE(id).toLowerCase();
   const returnedName = id => stataId(id) + "e";
   const geoStr = GEO_STATA[geography] || geography || "us";
@@ -196,28 +193,35 @@ function generateStataScript(queryVars, geography, state, years, labelFormat, se
   const multiYear = years.length > 1;
   const yearsLine = multiYear ? "local years " + years.join(" ") + "\n" : "";
   let yearOpt = "";
-  if (multiYear)           yearOpt = "year(" + "`" + "years" + "'" + ")";
+  if (multiYear)             yearOpt = "years(" + "`" + "years" + "'" + ")";
   else if (years.length===1) yearOpt = "year(" + years[0] + ")";
+
   const opts = [];
-  if (product)  opts.push("product(" + product + ")");
+  if (product) opts.push("product(" + product + ")");
   opts.push("sample(" + sample + ")");
-  if (yearOpt)  opts.push(yearOpt);
+  if (yearOpt) opts.push(yearOpt);
   opts.push("geo(" + geoStr + ")");
-  if (state)    opts.push("statefips(" + state + ")");
+  if (state)   opts.push("statefips(" + state + ")");
   opts.push('key("' + "`" + "apikey" + "'" + '")');
-  const optLines = opts.map((o,i) => "    " + o + (i < opts.length-1 ? " ///" : "")).join("\n");
-  const renameLines = queryVars.map(v => "rename " + returnedName(v.id) + " " + (v.shortName||v.id)).join("\n");
-  const labelLines = queryVars.map(v => {
-    const name = v.shortName || v.id;
-    return 'label variable ' + name + ' "' + buildVarLabel(v, labelFormat, series).replace(/"/g,"'") + '"';
-  }).join("\n");
-  return "* ACS " + seriesLabel + " Estimates — " + (geography||"geography not set") + "\n" +
+
+  const renameLines = queryVars.map(v => "rename " + returnedName(v.id) + " " + getFinal(v)).join("\n");
+  const labelLines  = queryVars.map(v =>
+    'label variable ' + getFinal(v) + ' "' + buildVarLabel(v, labelFormat, series).replace(/"/g,"'") + '"'
+  ).join("\n");
+
+  const countyBlock = geography === "county"
+    ? '\n* Generate FIPS codes for county-level data\n' +
+      'tostring state, replace format("%02.0f")\n' +
+      'tostring county, replace format("%03.0f")\n' +
+      'gen fips_state_county = state + county' : "";
+
+  return "* ACS " + seriesLabel + " Estimates — " + (geography || "geography not set") + "\n" +
     "* Generated by ACS Variable Explorer\n\n" +
     'local apikey "<your_api_key>"\n' + yearsLine + "\n" +
     mixedWarning +
-    "getcensus " + varIds + " ///\n" + optLines + "\n\n" +
+    "getcensus " + varIds + ", " + opts.join(" ") + "\n\n" +
     "* Rename to short names\n" + renameLines + "\n\n" +
-    "* Label variables\n" + labelLines;
+    "* Label variables\n" + labelLines + countyBlock;
 }
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
@@ -276,8 +280,40 @@ function YearPicker({ years, onChange }) {
   );
 }
 
+// ── Group prefix header ───────────────────────────────────────────────────────
+function GroupPrefixHeader({ group, label, prefix, onChange }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(prefix);
+  const inputRef = useRef(null);
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+  const commit = () => {
+    const cleaned = draft.trim().replace(/[^a-zA-Z0-9_]/g, "");
+    setDraft(cleaned); onChange(cleaned); setEditing(false);
+  };
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 4px 6px", borderBottom:"1.5px solid #e2e8f0", marginBottom:8 }}>
+      <code style={{ fontSize:11, color:"#5b21b6", background:"#f5f3ff", border:"1px solid #ddd6fe", padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{group}</code>
+      <span style={{ fontSize:12, color:"#94a3b8", flexShrink:0 }}>{label}</span>
+      <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+        <span style={{ fontSize:11, color:"#94a3b8" }}>prefix:</span>
+        {editing ? (
+          <input ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value)}
+            onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(prefix);setEditing(false);}}}
+            placeholder="none"
+            style={{ fontSize:12, fontWeight:700, color:"#1e3a5f", fontFamily:"monospace", border:"none", borderBottom:"2px solid #3b82f6", outline:"none", background:"transparent", width:Math.max(50,(draft.length||5)*8)+"px", padding:0 }} />
+        ) : (
+          <span onClick={()=>setEditing(true)} style={{ fontWeight:700, color:prefix?"#1e3a5f":"#94a3b8", fontFamily:"monospace", cursor:"text", borderBottom:"1.5px dashed #93c5fd", fontSize:12 }}>
+            {prefix || "(none)"}
+          </span>
+        )}
+        <span onClick={()=>setEditing(true)} style={{ cursor:"pointer", color:"#94a3b8", fontSize:12 }}>✏️</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Var chip ──────────────────────────────────────────────────────────────────
-function VarChip({ v, onRemove, onRename, isDuplicate }) {
+function VarChip({ v, prefix, onRemove, onRename, isDuplicate }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(v.shortName);
   const inputRef = useRef(null);
@@ -287,11 +323,15 @@ function VarChip({ v, onRemove, onRename, isDuplicate }) {
     const cleaned = draft.trim().replace(/[^a-zA-Z0-9_]/g,"") || v.shortName;
     setDraft(cleaned); onRename(cleaned); setEditing(false);
   };
+  const finalName = (prefix || "") + v.shortName;
   return (
-    <div style={{ display:"inline-flex", alignItems:"center", gap:0, background:isDuplicate?"#fff1f1":"#eff6ff", border:"1px solid "+(isDuplicate?"#fca5a5":"#bfdbfe"), borderRadius:8, padding:"5px 8px", fontSize:12, maxWidth:460 }}>
+    <div style={{ display:"inline-flex", alignItems:"center", gap:0, background:isDuplicate?"#fff1f1":"#eff6ff", border:"1px solid "+(isDuplicate?"#fca5a5":"#bfdbfe"), borderRadius:8, padding:"5px 8px", fontSize:12, maxWidth:500 }}>
       {isPercent
         ? <span style={{ background:"#f0fdf4", color:"#16a34a", border:"1px solid #bbf7d0", borderRadius:4, padding:"0 5px", fontSize:11, fontWeight:700, marginRight:6, flexShrink:0 }}>%</span>
         : <span style={{ background:"#fefce8", color:"#92400e", border:"1px solid #fde68a", borderRadius:4, padding:"0 5px", fontSize:11, fontWeight:700, marginRight:6, flexShrink:0 }}>est</span>}
+      {/* prefix (greyed out, not editable here) */}
+      {prefix && <span style={{ fontFamily:"monospace", fontSize:12, color:"#94a3b8", fontWeight:600, marginRight:1 }}>{prefix}</span>}
+      {/* editable suffix */}
       {editing ? (
         <input ref={inputRef} value={draft} onChange={e=>setDraft(e.target.value)}
           onBlur={commit} onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape"){setDraft(v.shortName);setEditing(false);}}}
@@ -299,11 +339,11 @@ function VarChip({ v, onRemove, onRename, isDuplicate }) {
       ) : (
         <span onClick={()=>setEditing(true)} style={{ fontWeight:700, color:isDuplicate?"#dc2626":"#1e40af", fontFamily:"monospace", cursor:"text", borderBottom:"1.5px dashed #93c5fd", marginRight:4 }}>{v.shortName}</span>
       )}
-      <span onClick={()=>setEditing(true)} style={{ cursor:"pointer", color:"#94a3b8", fontSize:13, marginLeft:2 }}>✏️</span>
+      <span onClick={()=>setEditing(true)} style={{ cursor:"pointer", color:"#94a3b8", fontSize:12, marginLeft:2 }}>✏️</span>
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>·</span>
       <code style={{ color:"#64748b", fontSize:11 }}>{v.id}</code>
       <span style={{ color:"#94a3b8", margin:"0 6px" }}>—</span>
-      <span style={{ color:"#475569", maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailVar||v.displayName}</span>
+      <span style={{ color:"#475569", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{v.detailLabel||v.detailVar||v.displayName}</span>
       {isDuplicate && <span style={{ color:"#dc2626", fontSize:11, marginLeft:6, flexShrink:0 }}>⚠ duplicate</span>}
       <span onClick={onRemove} style={{ cursor:"pointer", color:"#94a3b8", fontSize:15, lineHeight:1, marginLeft:8, flexShrink:0 }}>×</span>
     </div>
@@ -319,20 +359,37 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
   const [stataCopied, setStataCopied] = useState(false);
   const [genError, setGenError]       = useState("");
   const [labelFormat, setLabelFormat] = useState("with_id");
+  const [tablePrefixes, setTablePrefixes] = useState({});  // { [group]: prefix }
+
+  // Group vars by their group
+  const grouped = useMemo(() => {
+    const map = {};
+    queryVars.forEach(v => {
+      const g = v.row?.group || "ungrouped";
+      if (!map[g]) map[g] = { label: v.row?.label || "", vars: [] };
+      map[g].vars.push(v);
+    });
+    return map;
+  }, [queryVars]);
 
   const duplicateNames = useMemo(() => {
     const counts = {};
-    queryVars.forEach(v => { counts[v.shortName]=(counts[v.shortName]||0)+1; });
-    return new Set(Object.keys(counts).filter(k=>counts[k]>1));
-  }, [queryVars]);
+    queryVars.forEach(v => {
+      const final = (tablePrefixes[v.row?.group||""]||"") + v.shortName;
+      counts[final] = (counts[final]||0) + 1;
+    });
+    return new Set(Object.keys(counts).filter(k => counts[k] > 1));
+  }, [queryVars, tablePrefixes]);
+
+  const getFinal = useCallback(v => (tablePrefixes[v.row?.group||""]||"") + (v.shortName||v.id), [tablePrefixes]);
 
   const tryGenerate = useCallback(() => {
-    if (!geography||years.length===0||queryVars.length===0) return;
+    if (!geography || years.length===0 || queryVars.length===0) return;
     if (duplicateNames.size>0) { setGenError("Fix duplicate variable names before generating."); return; }
     setGenError("");
-    setRScript(generateRScript(queryVars,geography,selState,years,wide,labelFormat,series));
-    setStataScript(generateStataScript(queryVars,geography,selState,years,labelFormat,series));
-  }, [queryVars,geography,selState,years,wide,labelFormat,duplicateNames,series]);
+    setRScript(generateRScript(queryVars, geography, selState, years, wide, labelFormat, series, tablePrefixes));
+    setStataScript(generateStataScript(queryVars, geography, selState, years, labelFormat, series, tablePrefixes));
+  }, [queryVars, geography, selState, years, wide, labelFormat, duplicateNames, series, tablePrefixes]);
 
   useEffect(() => { tryGenerate(); }, [tryGenerate]);
 
@@ -354,8 +411,10 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
   const isCopied = scriptType==="r" ? rCopied : stataCopied;
 
   if (queryVars.length===0) return null;
+
   return (
     <div style={{ background:"white", border:"2px solid #1e3a5f", borderRadius:12, padding:16, marginBottom:20 }}>
+      {/* Header */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
         <span style={{ fontSize:13, fontWeight:700, color:"#1e3a5f", textTransform:"uppercase", letterSpacing:"0.06em" }}>
           Query · {queryVars.length} variable{queryVars.length!==1?"s":""}
@@ -372,12 +431,30 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
           <button onClick={onClear} style={{ background:"white", color:"#dc2626", border:"1.5px solid #fca5a5", borderRadius:7, padding:"7px 12px", cursor:"pointer", fontSize:12, fontWeight:600 }}>Clear all</button>
         </div>
       </div>
-      <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:genError||activeScript?12:0 }}>
-        {queryVars.map(v=>(
-          <VarChip key={v.uid} v={v} onRemove={()=>onRemove(v.uid)} onRename={name=>onRename(v.uid,name)} isDuplicate={duplicateNames.has(v.shortName)} />
+
+      {/* Grouped chips */}
+      <div style={{ marginBottom: genError||activeScript ? 12 : 0 }}>
+        {Object.entries(grouped).map(([group, { label, vars }]) => (
+          <div key={group} style={{ marginBottom:12 }}>
+            <GroupPrefixHeader
+              group={group} label={label}
+              prefix={tablePrefixes[group]||""}
+              onChange={p => setTablePrefixes(prev => ({ ...prev, [group]: p }))} />
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {vars.map(v => (
+                <VarChip key={v.uid} v={v}
+                  prefix={tablePrefixes[v.row?.group||""]||""}
+                  onRemove={()=>onRemove(v.uid)}
+                  onRename={name=>onRename(v.uid,name)}
+                  isDuplicate={duplicateNames.has(getFinal(v))} />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
+
       {genError && <p style={{ margin:"0 0 10px", fontSize:12, color:"#dc2626" }}>{genError}</p>}
+
       {(rScript||stataScript) && (
         <div style={{ background:"#1e1e2e", borderRadius:10, overflow:"hidden" }}>
           <div style={{ display:"flex", borderBottom:"1px solid #2d2d44" }}>
@@ -399,8 +476,8 @@ function QueryBasket({ queryVars, onRemove, onClear, onRename, geography, selSta
   );
 }
 
-// ── Reusable list panel ───────────────────────────────────────────────────────
-function ListPanel({ header, items, onSelect, renderLeft, renderRight, isSelected, isPinned }) {
+// ── List panel ────────────────────────────────────────────────────────────────
+function ListPanel({ header, items, onSelect, renderLeft, renderRight, isSelected }) {
   return (
     <div style={{ background:"white", borderRadius:10, border:"1.5px solid #cbd5e1", overflow:"hidden", marginBottom:14 }}>
       <div style={{ padding:"9px 16px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" }}>
@@ -408,12 +485,11 @@ function ListPanel({ header, items, onSelect, renderLeft, renderRight, isSelecte
       </div>
       {items.map((item, i) => {
         const selected = isSelected ? isSelected(item) : false;
-        const pinned   = isPinned   ? isPinned(item)   : false;
         return (
           <div key={i} onClick={()=>onSelect(item)}
-            style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 16px", borderBottom:i<items.length-1?"1px solid #f1f5f9":"none", cursor:"pointer", background:selected?"#eff6ff":pinned?"#fafbff":"white" }}
+            style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 16px", borderBottom:i<items.length-1?"1px solid #f1f5f9":"none", cursor:"pointer", background:selected?"#eff6ff":"white" }}
             onMouseEnter={e=>{ if(!selected) e.currentTarget.style.background="#f8fafc"; }}
-            onMouseLeave={e=>{ e.currentTarget.style.background=selected?"#eff6ff":pinned?"#fafbff":"white"; }}>
+            onMouseLeave={e=>{ e.currentTarget.style.background=selected?"#eff6ff":"white"; }}>
             <div style={{ display:"flex", alignItems:"center", gap:8, minWidth:0 }}>{renderLeft(item)}</div>
             <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0, marginLeft:12 }}>{renderRight(item)}</div>
           </div>
@@ -425,28 +501,24 @@ function ListPanel({ header, items, onSelect, renderLeft, renderRight, isSelecte
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [series, setSeries]             = useState("1yr");
-  const [csvText, setCsvText]           = useState("");
-  const [committed, setCommitted]       = useState("");
-  const [loading, setLoading]           = useState(true);
-  const [fetchError, setFetchError]     = useState("");
-
-  // Navigation: 3 levels
-  const [selectedBaseVar, setSelectedBaseVar] = useState(null); // { baseVar, label }
-  const [selectedGroup, setSelectedGroup]     = useState(null); // { group, label }
-  const [selectedVar, setSelectedVar]         = useState(null); // full row
-
-  const [search, setSearch]     = useState("");
-  const [added, setAdded]       = useState(false);
+  const [series, setSeries]               = useState("1yr");
+  const [csvText, setCsvText]             = useState("");
+  const [committed, setCommitted]         = useState("");
+  const [loading, setLoading]             = useState(true);
+  const [fetchError, setFetchError]       = useState("");
+  const [selectedBaseVar, setSelectedBaseVar] = useState(null);
+  const [selectedGroup, setSelectedGroup]     = useState(null);
+  const [selectedVar, setSelectedVar]         = useState(null);
+  const [search, setSearch]   = useState("");
+  const [added, setAdded]     = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [geography, setGeography]   = useState("");
   const [selState, setSelState]     = useState("");
   const [years, setYears]           = useState([]);
-  const [wide, setWide]             = useState(true);
+  const [wide, setWide]             = useState(false);
   const [queryVars, setQueryVars]   = useState([]);
 
   const activeSeries = ACS_SERIES.find(s => s.key === series);
-
   const resetNav = () => { setSelectedBaseVar(null); setSelectedGroup(null); setSelectedVar(null); };
 
   useEffect(() => {
@@ -459,23 +531,12 @@ export default function App() {
       .finally(() => setLoading(false));
   }, [series]);
 
-  const parsed = useMemo(() => parseCSV(committed), [committed]);
-  const rows   = parsed.rows || [];
-
-  // Level 1
+  const parsed   = useMemo(() => parseCSV(committed), [committed]);
+  const rows     = parsed.rows || [];
   const baseVars = useMemo(() => buildBaseVars(rows), [rows]);
+  const groupsForBase = useMemo(() => selectedBaseVar ? buildGroupsForBaseVar(rows, selectedBaseVar.baseVar) : [], [rows, selectedBaseVar]);
+  const varsForGroup  = useMemo(() => selectedGroup   ? getVarsForGroup(rows, selectedGroup.group) : [],   [rows, selectedGroup]);
 
-  // Level 2
-  const groupsForBase = useMemo(() =>
-    selectedBaseVar ? buildGroupsForBaseVar(rows, selectedBaseVar.baseVar) : [],
-  [rows, selectedBaseVar]);
-
-  // Level 3
-  const varsForGroup = useMemo(() =>
-    selectedGroup ? getVarsForGroup(rows, selectedGroup.group) : [],
-  [rows, selectedGroup]);
-
-  // Search: match id, detailLabel, label, baseVar
   const searchResults = useMemo(() => {
     if (!search) return [];
 
@@ -504,7 +565,7 @@ export default function App() {
     }).slice(0, 60);
   }, [rows, search]);
 
-
+  
   const alreadyInQuery = selectedVar && queryVars.some(v => v.id === selectedVar.id);
 
   const handleAddToQuery = () => {
@@ -514,7 +575,8 @@ export default function App() {
       uid: selectedVar.id + "-" + Date.now(),
       id: selectedVar.id,
       shortName: suggested,
-      displayName: selectedVar.detailVar || selectedVar.label,
+      displayName: selectedVar.detailLabel || selectedVar.detailVar || selectedVar.label,
+      detailLabel: selectedVar.detailLabel,
       detailVar: selectedVar.detailVar,
       row: selectedVar,
     }]);
@@ -522,9 +584,7 @@ export default function App() {
     setTimeout(() => setAdded(false), 1500);
   };
 
-  const handleRename = (uid, newName) => {
-    setQueryVars(prev => prev.map(v => v.uid===uid ? {...v, shortName:newName} : v));
-  };
+  const handleRename = (uid, newName) => setQueryVars(prev => prev.map(v => v.uid===uid ? {...v, shortName:newName} : v));
 
   const handleFile = e => {
     const file=e.target.files[0]; if(!file) return;
@@ -535,7 +595,7 @@ export default function App() {
 
   const hasData = rows.length > 0;
   const level = !selectedBaseVar ? 1 : !selectedGroup ? 2 : 3;
-  const isPercent = selectedVar && (selectedVar.id.toUpperCase().endsWith("PE") || selectedVar.id.toUpperCase().endsWith("P"));
+  const isPercent = selectedVar && (selectedVar.id.toUpperCase().endsWith("PE")||selectedVar.id.toUpperCase().endsWith("P"));
 
   return (
     <div style={{ fontFamily:"system-ui, sans-serif", maxWidth:900, margin:"0 auto", padding:24, background:"#f8fafc", minHeight:"100vh" }}>
@@ -574,11 +634,11 @@ export default function App() {
       {showUpload && (
         <div style={{ background:"white", border:"1.5px solid #cbd5e1", borderRadius:10, padding:16, marginBottom:20 }}>
           <p style={{ margin:"0 0 8px", fontSize:13, color:"#475569" }}>
-            Upload <strong>{activeSeries.file.replace("/","")}</strong> — needs columns: <strong>id</strong>, <strong>group</strong>, <strong>label_clean</strong>, <strong>detail_varname</strong>, <strong>both_varname</strong>, <strong>base var</strong>, <strong>demographic letter</strong>.
+            Upload <strong>{activeSeries.file.replace("/","")}</strong> — needs: <strong>id, group, label_clean, detail_clean, detail_varname, both_varname, base var</strong>.
           </p>
           <input type="file" accept=".csv,.txt" onChange={handleFile} style={{ fontSize:13, marginBottom:8, display:"block" }} />
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} placeholder="…or paste CSV text here"
-            style={{ width:"100%", height:100, fontSize:12, fontFamily:"monospace", border:"1px solid #cbd5e1", borderRadius:6, padding:8, boxSizing:"border-box", resize:"vertical" }} />
+            style={{ width:"100%", height:80, fontSize:12, fontFamily:"monospace", border:"1px solid #cbd5e1", borderRadius:6, padding:8, boxSizing:"border-box", resize:"vertical" }} />
           {parsed.error && <p style={{ color:"#dc2626", fontSize:13, margin:"6px 0 0" }}>{parsed.error}</p>}
           <button onClick={()=>{ setCommitted(csvText); setShowUpload(false); resetNav(); }}
             style={{ marginTop:10, background:"#1e3a5f", color:"white", border:"none", borderRadius:7, padding:"8px 20px", cursor:"pointer", fontWeight:600, fontSize:13 }}>
@@ -587,9 +647,9 @@ export default function App() {
         </div>
       )}
 
-      {loading  && <p style={{ color:"#64748b", fontSize:14 }}>Loading variables…</p>}
+      {loading   && <p style={{ color:"#64748b", fontSize:14 }}>Loading variables…</p>}
       {fetchError && <p style={{ color:"#dc2626", fontSize:13 }}>Could not auto-load CSV ({fetchError}) — upload manually above.</p>}
-      {!hasData && !loading && !showUpload && <p style={{ color:"#dc2626", fontSize:14 }}>No data loaded.</p>}
+      {!hasData&&!loading&&!showUpload && <p style={{ color:"#dc2626", fontSize:14 }}>No data loaded.</p>}
 
       {hasData && (<>
         {/* Series tabs */}
@@ -598,7 +658,7 @@ export default function App() {
             <button key={s.key} onClick={()=>setSeries(s.key)}
               style={{ flex:1, padding:"11px 0", fontSize:14, fontWeight:700, cursor:"pointer", border:"none", borderRight:s.key==="1yr"?"1.5px solid #cbd5e1":"none", background:series===s.key?s.color:"white", color:series===s.key?"white":"#64748b" }}>
               {s.label}
-              {series===s.key && <span style={{ marginLeft:8, fontSize:11, opacity:0.85, fontWeight:400 }}>({rows.length.toLocaleString()} vars)</span>}
+              {series===s.key&&<span style={{ marginLeft:8, fontSize:11, opacity:0.85, fontWeight:400 }}>({rows.length.toLocaleString()} vars)</span>}
             </button>
           ))}
         </div>
@@ -606,7 +666,7 @@ export default function App() {
         {/* Search */}
         <div style={{ position:"relative", marginBottom:12 }}>
           <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)", color:"#94a3b8" }}>🔍</span>
-          <input placeholder="Search tables..." value={search}
+          <input placeholder="Search variables, tables, or descriptions…" value={search}
             onChange={e=>{ setSearch(e.target.value); if(e.target.value) resetNav(); }}
             style={{ width:"100%", boxSizing:"border-box", padding:"11px 12px 11px 38px", fontSize:14, border:"1.5px solid #cbd5e1", borderRadius:10, outline:"none", background:"white" }} />
           {search && <button onClick={()=>setSearch("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", cursor:"pointer", fontSize:20, color:"#94a3b8" }}>×</button>}
@@ -627,7 +687,7 @@ export default function App() {
           <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:13, color:"#334155", cursor:"pointer", userSelect:"none" }}>
             <input type="checkbox" checked={wide} onChange={e=>setWide(e.target.checked)} style={{ accentColor:"#1e3a5f", width:14, height:14 }} />Wide
           </label>
-          {years.length>1 && <span style={{ fontSize:12, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"3px 9px", fontWeight:600 }}>map_dfr · {years.length} yrs</span>}
+          {years.length>1&&<span style={{ fontSize:12, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"3px 9px", fontWeight:600 }}>map_dfr · {years.length} yrs</span>}
         </div>
 
         {/* Query basket */}
@@ -637,7 +697,7 @@ export default function App() {
           onRename={handleRename}
           geography={geography} selState={selState} years={years} wide={wide} series={series} />
 
-        {/* ── SEARCH RESULTS ── */}
+        {/* Search results */}
         {search && (
           <div style={{ background:"white", borderRadius:10, border:"1.5px solid #cbd5e1", overflow:"hidden", marginBottom:16 }}>
             <div style={{ padding:"9px 16px", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" }}>
@@ -651,7 +711,7 @@ export default function App() {
                   onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";}}
                   onMouseLeave={e=>{e.currentTarget.style.background="white";}}>
                   <div>
-                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.label}</div>
+                    <div style={{ fontSize:13, color:"#334155", fontWeight:500 }}>{r.detailLabel||r.detailVar||r.label}</div>
                     <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{r.baseVar} › {r.group}</div>
                   </div>
                   <code style={{ background:"#eff6ff", color:"#1e40af", padding:"3px 8px", borderRadius:5, fontSize:12, fontWeight:700, flexShrink:0, marginLeft:12 }}>{r.id}</code>
@@ -660,22 +720,19 @@ export default function App() {
           </div>
         )}
 
-        {/* ── MAIN BROWSER ── */}
+        {/* Main browser */}
         {!search && (<>
-
           {/* Breadcrumb */}
-          {level > 1 && (
+          {level>1 && (
             <div style={{ display:"flex", alignItems:"center", gap:4, marginBottom:14, flexWrap:"wrap" }}>
               <NavBtn active={false} onClick={resetNav} label="All Tables" />
               {selectedBaseVar && (<>
                 <span style={{ color:"#94a3b8" }}>›</span>
-                <NavBtn active={level===2} onClick={()=>{ setSelectedGroup(null); setSelectedVar(null); }}
-                  label={selectedBaseVar.baseVar + " — " + selectedBaseVar.label} />
+                <NavBtn active={level===2} onClick={()=>{ setSelectedGroup(null); setSelectedVar(null); }} label={selectedBaseVar.baseVar+" — "+selectedBaseVar.label} />
               </>)}
               {selectedGroup && (<>
                 <span style={{ color:"#94a3b8" }}>›</span>
-                <NavBtn active={level===3} onClick={()=>setSelectedVar(null)}
-                  label={selectedGroup.group} />
+                <NavBtn active={level===3} onClick={()=>setSelectedVar(null)} label={selectedGroup.group} />
               </>)}
             </div>
           )}
@@ -692,7 +749,7 @@ export default function App() {
                       : <span style={{ background:"#fefce8", color:"#92400e", border:"1px solid #fde68a", borderRadius:4, padding:"1px 7px", fontSize:11, fontWeight:700 }}>Estimate</span>}
                   </div>
                   <p style={{ margin:0, fontSize:22, fontWeight:700, color:"#1e40af", fontFamily:"monospace" }}>{selectedVar.id}</p>
-                  <p style={{ margin:"3px 0 0", fontSize:13, color:"#334155" }}>{selectedVar.detailVar}</p>
+                  <p style={{ margin:"3px 0 0", fontSize:13, color:"#334155" }}>{selectedVar.detailLabel||selectedVar.detailVar}</p>
                   <p style={{ margin:"2px 0 0", fontSize:11, color:"#94a3b8" }}>{selectedVar.baseVar} › {selectedVar.group} · {selectedVar.label}</p>
                 </div>
                 <button onClick={handleAddToQuery} disabled={!!alreadyInQuery}
@@ -703,11 +760,9 @@ export default function App() {
             </div>
           )}
 
-          {/* Level 1 — Base Var list */}
+          {/* Level 1: base var list */}
           {level===1 && (
-            <ListPanel
-              header="ALL TABLES"
-              items={baseVars}
+            <ListPanel header="ALL TABLES" items={baseVars}
               onSelect={item=>{ setSelectedBaseVar(item); setSelectedGroup(null); setSelectedVar(null); }}
               renderLeft={item=>(
                 <>
@@ -716,61 +771,55 @@ export default function App() {
                 </>
               )}
               renderRight={item=>{
-                const cnt = rows.filter(r=>r.baseVar===item.baseVar).length;
+                const cnt=rows.filter(r=>r.baseVar===item.baseVar).length;
                 return (<>
                   <span style={{ fontSize:11, color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"2px 8px" }}>{cnt} vars</span>
                   <span style={{ color:"#94a3b8", fontSize:18 }}>›</span>
                 </>);
-              }}
-            />
+              }} />
           )}
 
-          {/* Level 2 — Demographic groups for a base var */}
+          {/* Level 2: demographic groups */}
           {level===2 && (
-            <ListPanel
-              header={"DEMOGRAPHIC BREAKDOWNS OF " + selectedBaseVar.baseVar}
-              items={groupsForBase}
+            <ListPanel header={"DEMOGRAPHIC BREAKDOWNS OF "+selectedBaseVar.baseVar} items={groupsForBase}
               onSelect={item=>{ setSelectedGroup(item); setSelectedVar(null); }}
               renderLeft={item=>(
                 <>
-                  <code style={{ background:"#f1f5f9", color:"#5b21b6", padding:"2px 7px", borderRadius:5, fontSize:12, fontWeight:700, flexShrink:0 }}>{item.group}</code>
+                  <code style={{ background:"#f5f3ff", color:"#5b21b6", padding:"2px 7px", borderRadius:5, fontSize:12, fontWeight:700, flexShrink:0 }}>{item.group}</code>
                   <span style={{ fontSize:14, color:"#334155" }}>{item.label}</span>
                 </>
               )}
               renderRight={item=>{
-                const cnt = rows.filter(r=>r.group===item.group).length;
+                const cnt=rows.filter(r=>r.group===item.group).length;
                 return (<>
                   <span style={{ fontSize:11, color:"#94a3b8", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"2px 8px" }}>{cnt} vars</span>
                   <span style={{ color:"#94a3b8", fontSize:18 }}>›</span>
                 </>);
-              }}
-            />
+              }} />
           )}
 
-          {/* Level 3 — Variables within a group */}
+          {/* Level 3: variables */}
           {level===3 && (
-            <ListPanel
-              header={"VARIABLES IN " + selectedGroup.group}
-              items={varsForGroup}
+            <ListPanel header={"VARIABLES IN "+selectedGroup.group} items={varsForGroup}
               onSelect={item=>setSelectedVar(item)}
               isSelected={item=>selectedVar?.id===item.id}
               renderLeft={item=>{
-                const isP = item.id.toUpperCase().endsWith("PE")||item.id.toUpperCase().endsWith("P");
-                const inQ = queryVars.some(v=>v.id===item.id);
+                const isP=item.id.toUpperCase().endsWith("PE")||item.id.toUpperCase().endsWith("P");
+                const inQ=queryVars.some(v=>v.id===item.id);
                 return (<>
                   {isP
                     ? <span style={{ background:"#f0fdf4", color:"#16a34a", border:"1px solid #bbf7d0", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>%</span>
                     : <span style={{ background:"#fefce8", color:"#92400e", border:"1px solid #fde68a", borderRadius:4, padding:"0 5px", fontSize:10, fontWeight:700, flexShrink:0 }}>est</span>}
-                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.detailLabel || item.bothVar || item.detailVar || "(no label)"}</span>
-                  {inQ && <span style={{ fontSize:10, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"1px 6px", flexShrink:0 }}>in query</span>}
+                  <span style={{ fontSize:13, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {item.detailLabel || item.bothVar || item.detailVar || "(no label)"}
+                  </span>
+                  {inQ&&<span style={{ fontSize:10, color:"#7c3aed", background:"#f5f3ff", border:"1px solid #ddd6fe", borderRadius:6, padding:"1px 6px", flexShrink:0 }}>in query</span>}
                 </>);
               }}
               renderRight={item=>(
                 <code style={{ background:"#eff6ff", color:"#1e40af", padding:"3px 8px", borderRadius:5, fontSize:12, fontWeight:700 }}>{item.id}</code>
-              )}
-            />
+              )} />
           )}
-
         </>)}
       </>)}
     </div>

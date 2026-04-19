@@ -30,6 +30,6 @@
 
 
   // make this the suggestShortName for now
-  function suggestShortName(bothVar, id) {
-    return bothVar
-}
+    function suggestShortName(detailVar, id) {
+        return detailVar.replcace("__","")
+    }

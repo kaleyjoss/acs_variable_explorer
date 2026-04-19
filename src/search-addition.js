@@ -31,5 +31,5 @@
 
   // make this the suggestShortName for now
     function suggestShortName(detailVar, id) {
-        return detailVar.replcace("__","")
+        return detailVar.replace("__","")
     }

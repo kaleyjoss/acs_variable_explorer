@@ -112,7 +112,7 @@ function buildVarLabel(v, labelFormat, series) {
 function toCamelCase(str) { return str.replace(/_+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()); }
 
 function suggestShortName(detailVar, id) {
-    return detailVar.replace("__","")
+    return detailVar
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────

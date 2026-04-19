@@ -112,7 +112,7 @@ function buildVarLabel(v, labelFormat, series) {
 function toCamelCase(str) { return str.replace(/_+([a-zA-Z0-9])/g, (_, c) => c.toUpperCase()); }
 
 function suggestShortName(detailVar, id) {
-    return detailVar
+    return detailVar.replace("__","")
 }
 
 // ── R script ──────────────────────────────────────────────────────────────────
@@ -565,7 +565,7 @@ export default function App() {
 
   const handleAddToQuery = () => {
     if (!selectedVar || alreadyInQuery) return;
-    const suggested = suggestShortName(selectedVar.bothVar || "", selectedVar.id);
+    const suggested = suggestShortName(selectedVar.detailVar || "", selectedVar.id);
     setQueryVars(prev => [...prev, {
       uid: selectedVar.id + "-" + Date.now(),
       id: selectedVar.id,

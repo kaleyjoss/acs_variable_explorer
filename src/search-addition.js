@@ -33,3 +33,8 @@
     function suggestShortName(detailVar, id) {
         return detailVar.replace("__","")
     }
+
+// and this puts in detailVar 
+  const handleAddToQuery = () => {
+    if (!selectedVar || alreadyInQuery) return;
+    const suggested = suggestShortName(selectedVar.detailVar || "", selectedVar.id);
